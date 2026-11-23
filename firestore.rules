@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if caller is the authorized SuperAdmin
+    function isSuperAdmin() {
+      return request.auth != null && 
+        (request.auth.token.email.lower() == 'bmwm25320@gmail.com');
+    }
+
+    // Centralized Login & Device Audit Logs Collection
+    match /login_audit_logs/{logId} {
+      // Any authenticated user can record their own login/signup audit entry
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+
+      // STRICT ADMIN PRIVILEGE: Only bmwm25320@gmail.com can read, list, filter, update or delete audit logs
+      allow read, list: if isSuperAdmin();
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // User profiles collection
+    match /users/{userId} {
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isSuperAdmin());
+    }
+  }
+}

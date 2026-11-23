@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Python cache & PyInstaller build directories
+__pycache__/
+*.py[cod]
+build/
+*.spec
+
+# Distribution output
+frontend/dist/
+
+# Quarantine and protected test zones
+*quarantine_vault/
+*protected_zone/
+*.quarantine
+
+# Keep releases binaries tracked or release uploaded
+backend/releases/*.apk
+backend/releases/*.exe
+
+# Environment files
+.env
+frontend/.env

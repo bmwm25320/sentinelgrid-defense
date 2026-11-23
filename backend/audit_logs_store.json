@@ -1,0 +1,74 @@
+[
+  {
+    "id": "33ede627-71ec-40d8-8161-c5eaee894bc8",
+    "uid": "google_test_uid_999",
+    "email": "bmwm25320@gmail.com",
+    "full_name": "SuperAdmin (Master Controller)",
+    "photo_url": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde",
+    "event_type": "USER_LOGIN",
+    "login_date": "November 23, 2026",
+    "login_time": "08:24:26 PM IST",
+    "iso_timestamp": "2026-11-23T14:54:26Z",
+    "platform": "Windows Desktop"
+  },
+  {
+    "id": "21c030ea-d004-4eb0-b366-35663d1cc66c",
+    "uid": "google_oauth_admin_982341",
+    "email": "bmwm25320@gmail.com",
+    "full_name": "SuperAdmin (Master Controller)",
+    "photo_url": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+    "event_type": "USER_LOGIN",
+    "login_date": "November 23, 2026",
+    "login_time": "08:41:38 PM IST",
+    "iso_timestamp": "2026-11-23T20:41:38.705903Z",
+    "platform": "Windows Desktop"
+  },
+  {
+    "id": "94064e8b-538b-4dd7-9f1b-58bbae0caa17",
+    "uid": "google_oauth_sumit_783109",
+    "email": "sumit.security@sentinelgrid.ai",
+    "full_name": "Sumit Kumar (Security Lead)",
+    "photo_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80",
+    "event_type": "USER_LOGIN",
+    "login_date": "November 23, 2026",
+    "login_time": "07:59:38 PM IST",
+    "iso_timestamp": "2026-11-23T19:59:38.705903Z",
+    "platform": "Android Mobile"
+  },
+  {
+    "id": "90f27358-ad23-4f1b-af2b-5c35ca522e6f",
+    "uid": "google_oauth_alex_554120",
+    "email": "alex.dev@sentinelgrid.ai",
+    "full_name": "Alex Vance (DevOps)",
+    "photo_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80",
+    "event_type": "NEW_ACCOUNT_SIGNUP",
+    "login_date": "November 23, 2026",
+    "login_time": "06:26:38 PM IST",
+    "iso_timestamp": "2026-11-23T18:26:38.705903Z",
+    "platform": "Web Portal"
+  },
+  {
+    "id": "ea12726d-568c-4731-8da5-10fbc1fd223c",
+    "uid": "google_oauth_clara_331902",
+    "email": "clara.soc@cloudcorp.io",
+    "full_name": "Clara Oswald (SOC Analyst)",
+    "photo_url": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80",
+    "event_type": "USER_LOGIN",
+    "login_date": "November 22, 2026",
+    "login_time": "04:15:30 PM IST",
+    "iso_timestamp": "2026-11-22T20:41:38.705903Z",
+    "platform": "Windows Desktop"
+  },
+  {
+    "id": "5a0f88c4-b37b-42a6-830b-1c9ff3214894",
+    "uid": "google_oauth_marcus_119283",
+    "email": "marcus.mobile@guard.net",
+    "full_name": "Marcus Brody (Field Agent)",
+    "photo_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80",
+    "event_type": "NEW_ACCOUNT_SIGNUP",
+    "login_date": "November 22, 2026",
+    "login_time": "11:08:44 AM IST",
+    "iso_timestamp": "2026-11-22T20:41:38.705903Z",
+    "platform": "Android Mobile"
+  }
+]

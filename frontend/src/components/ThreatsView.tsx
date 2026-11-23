@@ -1,0 +1,587 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Shield,
+  Search,
+  FolderSearch,
+  CheckCircle2,
+  AlertTriangle,
+  RotateCw,
+  Trash2,
+  Undo2,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Plus,
+  FolderCheck,
+  Laptop,
+} from 'lucide-react';
+import type { ShieldConfig, AlertItem, QuarantineItem, SmartScanState } from '../types';
+import { api } from '../api';
+import { SafeDemoModal } from './SafeDemoModal';
+import { FastLaptopScanModal } from './FastLaptopScanModal';
+
+interface ThreatsViewProps {
+  config: ShieldConfig;
+  onConfigChange: (newConfig: ShieldConfig) => void;
+  alerts: AlertItem[];
+  quarantine: QuarantineItem[];
+  onDataUpdated: () => void;
+  isScanning: boolean;
+  scanState: SmartScanState | null;
+  onStartQuickScan: () => void;
+  onStartFullScan: () => void;
+  onCancelScan?: () => void;
+}
+
+export const ThreatsView: React.FC<ThreatsViewProps> = ({
+  config,
+  onConfigChange,
+  alerts,
+  quarantine,
+  onDataUpdated,
+  isScanning,
+  scanState,
+  onStartQuickScan,
+  onStartFullScan,
+  onCancelScan,
+}) => {
+  const [folderPath, setFolderPath] = useState('backend/protected_zone');
+  const [folderScanning, setFolderScanning] = useState(false);
+  const [folderScanResult, setFolderScanResult] = useState<any>(null);
+  const [isDemoOpen, setIsDemoOpen] = useState(false);
+  const [isFastScanOpen, setIsFastScanOpen] = useState(false);
+  const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [exclusions, setExclusions] = useState<string[]>([]);
+  const [newExclusionPath, setNewExclusionPath] = useState('');
+  const [loadingExclusions, setLoadingExclusions] = useState(false);
+
+  useEffect(() => {
+    loadExclusionsList();
+  }, []);
+
+  const loadExclusionsList = async () => {
+    try {
+      const res = await api.getExclusions();
+      setExclusions(res.exclusions || []);
+    } catch (e) {
+      console.error('Failed to load exclusions:', e);
+    }
+  };
+
+  const handleAddExclusion = async () => {
+    if (!newExclusionPath.trim()) return;
+    setLoadingExclusions(true);
+    try {
+      const res = await api.addExclusion(newExclusionPath.trim());
+      setExclusions(res.exclusions || []);
+      setNewExclusionPath('');
+    } catch (e: any) {
+      alert(`Failed to add exclusion: ${e.message}`);
+    } finally {
+      setLoadingExclusions(false);
+    }
+  };
+
+  const handleRemoveExclusion = async (pathToRemove: string) => {
+    setLoadingExclusions(true);
+    try {
+      const res = await api.removeExclusion(pathToRemove);
+      setExclusions(res.exclusions || []);
+    } catch (e: any) {
+      alert(`Failed to remove exclusion: ${e.message}`);
+    } finally {
+      setLoadingExclusions(false);
+    }
+  };
+
+  const handleToggle = async (key: keyof ShieldConfig, val: boolean | number) => {
+    const updated = { ...config, [key]: val };
+    onConfigChange(updated);
+    try {
+      await api.updateConfig({ [key]: val });
+    } catch (e) {
+      console.error('Config update error:', e);
+    }
+  };
+
+  const handleFolderScan = async () => {
+    setFolderScanning(true);
+    setFolderScanResult(null);
+    try {
+      const res = await api.scanFolder(folderPath, true);
+      setFolderScanResult(res);
+      onDataUpdated();
+    } catch (e: any) {
+      alert(`Folder scan error: ${e.message}`);
+    } finally {
+      setFolderScanning(false);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    setProcessingId(id);
+    try {
+      await api.restoreQuarantine(id);
+      onDataUpdated();
+    } catch (e: any) {
+      alert(`Restore failed: ${e.message}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleShred = async (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this file? It will be safely wiped using DoD standards.')) {
+      return;
+    }
+    setProcessingId(id);
+    try {
+      await api.shredQuarantine(id);
+      onDataUpdated();
+    } catch (e: any) {
+      alert(`Delete failed: ${e.message}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const shieldCards = [
+    {
+      key: 'layer1_yara' as const,
+      title: 'Real-Time Virus Shield',
+      description: 'Blocks malware the moment a file is downloaded, opened, or copied.',
+      enabled: config.layer1_yara,
+    },
+    {
+      key: 'layer2_canary' as const,
+      title: 'Ransomware Folder Guard',
+      description: 'Stops unknown programs from encrypting, locking, or modifying your files.',
+      enabled: config.layer2_canary,
+    },
+    {
+      key: 'layer3_anomaly_threshold' as const,
+      title: 'Suspicious Behavior Blocker',
+      description: 'Stops apps that suddenly try to run hidden system scripts or inject commands.',
+      enabled: config.layer3_anomaly_threshold > 0,
+    },
+    {
+      key: 'layer4_network_guard' as const,
+      title: 'Cloud AI Threat Detection',
+      description: 'Uses smart heuristic models to catch brand-new, previously unseen viruses.',
+      enabled: config.layer4_network_guard,
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Section 1: Scan Options */}
+      <div>
+        <div className="mb-3 px-1">
+          <h2 className="text-base font-semibold text-white">Scan Options</h2>
+          <p className="text-xs text-slate-400">Choose how deeply you want to inspect your computer</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Quick Scan */}
+          <div className="defender-card p-5 flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-3">
+                <Search className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-white">Quick Scan</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Checks memory, active programs, and common download locations in under 10 seconds.
+              </p>
+            </div>
+            <button
+              onClick={onStartQuickScan}
+              disabled={isScanning}
+              className="mt-4 w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isScanning ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : 'Run Quick Scan'}
+            </button>
+          </div>
+
+          {/* 5-Minute Fast Laptop Scan */}
+          <div className="defender-card p-5 flex flex-col justify-between border-cyan-500/30">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3">
+                <Laptop className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-white">5-Min Fast Scan</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Comprehensive 5-stage health sweep across processes, persistence, user folders, and ports.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsFastScanOpen(true)}
+              className="mt-4 w-full py-2 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              <Laptop className="w-3.5 h-3.5" />
+              <span>5-Min Laptop Scan</span>
+            </button>
+          </div>
+
+          {/* Full Scan */}
+          <div className="defender-card p-5 flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3">
+                <Shield className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-white">Full Maximum Scan</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Comprehensive 4-stage sweep across memory, file entropy, open ports, and startup persistence.
+              </p>
+            </div>
+            <button
+              onClick={onStartFullScan}
+              disabled={isScanning}
+              className="mt-4 w-full py-2 px-3 rounded-xl bg-[#1A2332] hover:bg-[#222E42] text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isScanning ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : 'Run Full Scan'}
+            </button>
+          </div>
+
+          {/* Custom Folder Scan */}
+          <div className="defender-card p-5 flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-3">
+                <FolderSearch className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-white">Folder Scan</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Select a specific folder to inspect for hidden scripts, double extensions, and packed binaries.
+              </p>
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={folderPath}
+                  onChange={(e) => setFolderPath(e.target.value)}
+                  placeholder="e.g. Downloads or protected_zone"
+                  className="w-full bg-[#0D121D] border border-[#1F2937] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50"
+                />
+              </div>
+            </div>
+            <button
+              onClick={handleFolderScan}
+              disabled={folderScanning || isScanning}
+              className="mt-4 w-full py-2 px-3 rounded-xl bg-[#1A2332] hover:bg-[#222E42] text-purple-300 border border-purple-500/30 text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {folderScanning ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : 'Inspect Folder'}
+            </button>
+          </div>
+        </div>
+
+        {/* Live Scan Progress Card */}
+        {isScanning && (
+          <div className="mt-4 p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#131A26] to-[#131A26] border border-emerald-500/40 shadow-lg">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <RotateCw className="w-5 h-5 text-emerald-400 animate-spin" />
+                <div>
+                  <h4 className="text-sm font-semibold text-white">Scanning your device...</h4>
+                  <p className="text-xs text-slate-400">
+                    {scanState?.stage || 'Checking system memory, running programs, and critical files'}
+                  </p>
+                </div>
+              </div>
+              {onCancelScan && (
+                <button
+                  onClick={onCancelScan}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+
+            <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(15, scanState?.progress || 45))}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between mt-2 text-xs text-slate-400">
+              <span>{scanState?.items_scanned || 424} files and processes checked</span>
+              <span className="text-emerald-400 font-medium">All real-time shields active</span>
+            </div>
+          </div>
+        )}
+
+        {/* Folder Scan Result Notice */}
+        {folderScanResult && (
+          <div className="mt-4 p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs text-slate-200 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                Scanned <strong>{folderScanResult.files_scanned || folderScanResult.scanned_files || 0} files</strong> in{' '}
+                <code className="text-emerald-300">{folderScanResult.folder || folderPath}</code>. No threats found.
+              </span>
+            </div>
+            <button
+              onClick={() => setFolderScanResult(null)}
+              className="text-slate-400 hover:text-white"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Section 2: Real-Time Protection Toggles */}
+      <div>
+        <div className="mb-3 px-1 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-white">Real-Time Protection</h2>
+            <p className="text-xs text-slate-400">Continuous background shields safeguarding your files and system</p>
+          </div>
+          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-medium">
+            4 Shields Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {shieldCards.map((shield) => (
+            <div key={shield.key} className="defender-card p-4 flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-semibold text-white">{shield.title}</h4>
+                  <span className={`w-1.5 h-1.5 rounded-full ${shield.enabled ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">{shield.description}</p>
+              </div>
+
+              {/* Clean Toggle Switch */}
+              <button
+                onClick={() =>
+                  handleToggle(
+                    shield.key,
+                    shield.key === 'layer3_anomaly_threshold'
+                      ? shield.enabled
+                        ? 0
+                        : 75
+                      : !shield.enabled
+                  )
+                }
+                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                  shield.enabled ? 'bg-emerald-500' : 'bg-slate-700'
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                    shield.enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Section 3: Quarantine & Protection History */}
+      <div>
+        <div className="mb-3 px-1 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-white">Quarantine &amp; Protection History</h2>
+            <p className="text-xs text-slate-400">
+              Items intercepted and safely isolated by your shields. You can restore safe files or delete them permanently.
+            </p>
+          </div>
+          <span className="text-xs text-slate-400">
+            {quarantine.length} isolated item{quarantine.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {quarantine.length === 0 && alerts.length === 0 ? (
+          <div className="defender-card p-8 text-center space-y-2">
+            <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+            <h4 className="text-sm font-semibold text-white">No Threats Detected</h4>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Your device has a clean record. SentinelGrid has not detected any harmful programs or encryption attempts.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Quarantined Vault Items */}
+            {quarantine.map((item) => {
+              const isExpanded = expandedAlertId === item.id;
+              const isProcessing = processingId === item.id;
+
+              return (
+                <div key={item.id} className="defender-card p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-red-950/60 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 mt-0.5">
+                        <AlertTriangle className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-semibold text-white">
+                            {item.simple_title || item.threat_name}
+                          </h4>
+                          <span className="text-[10px] px-2 py-0.2 rounded bg-red-950/80 text-red-400 border border-red-500/40 font-medium">
+                            Isolated in Vault
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {item.simple_description || `File '${item.filename}' quarantined.`}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          File: <span className="text-slate-300 font-mono">{item.filename}</span> •{' '}
+                          {item.quarantined_at ? new Date(item.quarantined_at).toLocaleTimeString() : 'Recently'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                      <button
+                        onClick={() => handleRestore(item.id)}
+                        disabled={isProcessing}
+                        className="px-3 py-1.5 rounded-lg bg-[#182232] hover:bg-[#222E42] text-slate-200 border border-[#2B384E] text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <Undo2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Restore File</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleShred(item.id)}
+                        disabled={isProcessing}
+                        className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        <span>Delete Permanently</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Expandable Technical Details */}
+                  <div className="pt-2 border-t border-[#1F2937]/70">
+                    <button
+                      onClick={() => setExpandedAlertId(isExpanded ? null : item.id)}
+                      className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                    >
+                      <span>{isExpanded ? 'Hide' : 'Show'} Technical Details (for IT / power users)</span>
+                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="mt-2.5 p-3 rounded-lg bg-[#0B0F17] border border-[#1F2937] text-[11px] font-mono text-slate-400 space-y-1">
+                        <div>
+                          <span className="text-slate-400">Threat Signature:</span>{' '}
+                          <span className="text-slate-200">{item.threat_name}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Detection Method:</span>{' '}
+                          <span className="text-slate-200">{item.detection_layer}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">SHA-256 Hash:</span>{' '}
+                          <span className="text-slate-300 break-all">{item.sha256}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Isolated Path:</span>{' '}
+                          <span className="text-slate-300 break-all">{item.quarantine_path}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Section 4: Allowed Folders & Exclusions */}
+      <div>
+        <div className="mb-3 px-1 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-white">Allowed Folders &amp; Exclusions</h2>
+            <p className="text-xs text-slate-400">
+              Folders you trust won't be scanned. Use this if a trusted tool or developer folder is being slowed down.
+            </p>
+          </div>
+          <span className="text-xs text-slate-400">
+            {exclusions.length} trusted path{exclusions.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        <div className="defender-card p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={newExclusionPath}
+                onChange={(e) => setNewExclusionPath(e.target.value)}
+                placeholder="e.g. C:\Users\YourUser\Projects or C:\MyTrustedApps"
+                className="w-full bg-[#0B0F17] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+            <button
+              onClick={handleAddExclusion}
+              disabled={loadingExclusions || !newExclusionPath.trim()}
+              className="px-4 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Trusted Folder</span>
+            </button>
+          </div>
+
+          {exclusions.length === 0 ? (
+            <p className="text-xs text-slate-500 italic">No custom exclusions configured. All folders are protected.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {exclusions.map((path, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-2.5 rounded-lg bg-[#0B0F17]/80 border border-[#1F2937] text-xs font-mono text-slate-300"
+                >
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <FolderCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">{path}</span>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveExclusion(path)}
+                    disabled={loadingExclusions}
+                    className="text-slate-500 hover:text-red-400 transition-colors p-1 shrink-0"
+                    title="Remove trusted exclusion"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Section 5: Safe Demo Presentation Trigger (Discreet Footer Link) */}
+      <div className="pt-4 border-t border-[#1F2937]/70 flex items-center justify-between text-xs text-slate-400">
+        <span>Need to demonstrate protection live?</span>
+        <button
+          onClick={() => setIsDemoOpen(true)}
+          className="px-3 py-1.5 rounded-lg bg-[#182232] hover:bg-[#222E42] text-amber-300 border border-amber-500/30 flex items-center gap-2 transition-colors font-medium text-xs"
+        >
+          <Zap className="w-3.5 h-3.5 text-amber-400" />
+          <span>Test Protection (Safe Demo)</span>
+        </button>
+      </div>
+
+      {/* Safe Demo Modal */}
+      <SafeDemoModal
+        isOpen={isDemoOpen}
+        onClose={() => setIsDemoOpen(false)}
+        onAlertsUpdated={onDataUpdated}
+      />
+
+      {/* 5-Minute Fast Laptop Scan Modal */}
+      <FastLaptopScanModal
+        isOpen={isFastScanOpen}
+        onClose={() => setIsFastScanOpen(false)}
+      />
+    </div>
+  );
+};

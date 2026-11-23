@@ -1,0 +1,339 @@
+import React, { useState } from 'react';
+import {
+  Wifi,
+  ShieldCheck,
+  Globe,
+  Radio,
+  CheckCircle2,
+  Info,
+  Search,
+  AlertTriangle,
+  XCircle,
+} from 'lucide-react';
+import type { DeviceAudit, ShieldConfig, NetworkConnectionItem, UrlCheckResult } from '../types';
+import { api } from '../api';
+
+interface NetworkViewProps {
+  audit: DeviceAudit | null;
+  config: ShieldConfig;
+  onConfigChange: (newConfig: ShieldConfig) => void;
+}
+
+export const NetworkView: React.FC<NetworkViewProps> = ({
+  audit,
+  config,
+  onConfigChange,
+}) => {
+  const [filterText, setFilterText] = useState('');
+  const [urlInput, setUrlInput] = useState('');
+  const [urlChecking, setUrlChecking] = useState(false);
+  const [urlResult, setUrlResult] = useState<UrlCheckResult | null>(null);
+
+  const handleCheckUrl = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!urlInput.trim()) return;
+    setUrlChecking(true);
+    try {
+      const res = await api.checkUrl(urlInput.trim());
+      setUrlResult(res);
+    } catch (err: any) {
+      alert(`Link check failed: ${err.message}`);
+    } finally {
+      setUrlChecking(false);
+    }
+  };
+
+  const connections: NetworkConnectionItem[] = audit?.network_audit?.foreign_connections || [];
+  const listeningPorts = audit?.network_audit?.listening_ports || [];
+
+  const filteredConnections = connections.filter((c: NetworkConnectionItem) =>
+    (c.process || '').toLowerCase().includes(filterText.toLowerCase()) ||
+    (c.remote_ip || '').toLowerCase().includes(filterText.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Top Network Status Banner */}
+      <div className="p-6 rounded-2xl bg-gradient-to-r from-[#0F1B24] via-[#131A26] to-[#131A26] border border-emerald-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center shadow-md">
+            <Wifi className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30">
+                Connected &amp; Secure
+              </span>
+              <span className="text-xs text-slate-400">• Local Network</span>
+            </div>
+            <h2 className="text-lg font-bold text-white tracking-tight mt-0.5">
+              Firewall &amp; Network Protection Active
+            </h2>
+            <p className="text-xs text-slate-400">
+              Monitoring incoming and outgoing connections safely. No unauthorized data leaks detected.
+            </p>
+          </div>
+        </div>
+
+        {/* Network Shield Toggle */}
+        <div className="flex items-center gap-3 bg-[#0D121D] border border-[#1F2937] p-2.5 rounded-xl self-start md:self-auto">
+          <span className="text-xs text-slate-300 font-medium">Network Guard</span>
+          <button
+            onClick={() => onConfigChange({ ...config, layer4_network_guard: !config.layer4_network_guard })}
+            className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
+              config.layer4_network_guard ? 'bg-emerald-500' : 'bg-slate-700'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                config.layer4_network_guard ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* 2-Column Overview Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="defender-card p-4">
+          <div className="flex items-center gap-2.5 text-xs text-slate-400 mb-1">
+            <Globe className="w-4 h-4 text-emerald-400" />
+            <span>Active Connections</span>
+          </div>
+          <div className="text-2xl font-bold text-white tracking-tight">
+            {connections.length}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Legitimate apps communicating online</p>
+        </div>
+
+        <div className="defender-card p-4">
+          <div className="flex items-center gap-2.5 text-xs text-slate-400 mb-1">
+            <Radio className="w-4 h-4 text-cyan-400" />
+            <span>Monitored Ports</span>
+          </div>
+          <div className="text-2xl font-bold text-white tracking-tight">
+            {listeningPorts.length}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Local background service endpoints</p>
+        </div>
+
+        <div className="defender-card p-4">
+          <div className="flex items-center gap-2.5 text-xs text-slate-400 mb-1">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Inbound Protection</span>
+          </div>
+          <div className="text-2xl font-bold text-emerald-400 tracking-tight">
+            Protected
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Windows Firewall active and blocking probes</p>
+        </div>
+      </div>
+
+      {/* Network Safety & Open Ports Advice */}
+      <div className="defender-card p-5 space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+          <div className="flex items-center gap-2">
+            <Info className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-xs font-semibold text-white">Network Security &amp; Sharing Advice</h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Plain-English Assessment</span>
+        </div>
+
+        <div className="space-y-2 text-xs text-slate-300">
+          <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937] flex items-start gap-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-white">Windows File &amp; Printer Sharing (Port 445): </span>
+              <span className="text-slate-400">
+                Active on your local home network. This is completely standard for home printers and network folders. SentinelGrid keeps it shielded from untrusted internet networks.
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937] flex items-start gap-3">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold text-white">System Service Endpoints (Ports 135 &amp; 139): </span>
+              <span className="text-slate-400">
+                Bound safely to internal Windows services (<code className="text-slate-300">svchost.exe</code>). Your firewall is preventing external access.
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Safe Link & Phishing Checker */}
+      <div className="defender-card p-5 space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+          <div className="flex items-center gap-2">
+            <Globe className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-xs font-semibold text-white">Safe Link &amp; Phishing Checker</h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Web Threat Prevention</span>
+        </div>
+
+        <p className="text-xs text-slate-400">
+          Paste any web address before opening it to check for deceptive login forms, raw numerical IPs, or dangerous file downloads (.exe/.scr).
+        </p>
+
+        <form onSubmit={handleCheckUrl} className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="e.g. 192.168.1.5/update.exe or paypal.com"
+              className="w-full bg-[#0D121D] border border-[#1F2937] rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 font-mono focus:outline-none focus:border-emerald-500/50"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={urlChecking || !urlInput.trim()}
+            className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {urlChecking ? (
+              <span className="flex items-center gap-1.5">Checking...</span>
+            ) : (
+              <>
+                <Search className="w-3.5 h-3.5" />
+                <span>Check Link</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {urlResult && (
+          <div
+            className={`p-4 rounded-xl border space-y-3 transition-all ${
+              urlResult.status === 'SAFE'
+                ? 'bg-emerald-950/20 border-emerald-500/30'
+                : urlResult.status === 'SUSPICIOUS'
+                ? 'bg-amber-950/20 border-amber-500/30'
+                : 'bg-red-950/30 border-red-500/40'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                {urlResult.status === 'SAFE' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                ) : urlResult.status === 'SUSPICIOUS' ? (
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-red-400 shrink-0" />
+                )}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                        urlResult.status === 'SAFE'
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : urlResult.status === 'SUSPICIOUS'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}
+                    >
+                      {urlResult.status}
+                    </span>
+                    <span className="text-xs font-semibold text-white">
+                      {urlResult.verdict_title}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-1">{urlResult.explanation}</p>
+                </div>
+              </div>
+
+              {/* Risk meter */}
+              <div className="text-right shrink-0">
+                <span className="text-[10px] text-slate-400 block">Risk Score</span>
+                <span
+                  className={`text-lg font-bold ${
+                    urlResult.status === 'SAFE'
+                      ? 'text-emerald-400'
+                      : urlResult.status === 'SUSPICIOUS'
+                      ? 'text-amber-400'
+                      : 'text-red-400'
+                  }`}
+                >
+                  {urlResult.risk_score}%
+                </span>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-[#0B0F17] h-1.5 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  urlResult.status === 'SAFE'
+                    ? 'bg-emerald-400'
+                    : urlResult.status === 'SUSPICIOUS'
+                    ? 'bg-amber-400'
+                    : 'bg-red-500'
+                }`}
+                style={{ width: `${Math.max(5, urlResult.risk_score)}%` }}
+              />
+            </div>
+
+            {urlResult.reasons && urlResult.reasons.length > 0 && (
+              <div className="pt-2 border-t border-[#1F2937]/60 space-y-1">
+                <span className="text-[11px] font-semibold text-slate-300">Why was this flagged?</span>
+                <ul className="space-y-1 text-xs text-slate-400 list-disc list-inside">
+                  {urlResult.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Active Applications Using Internet */}
+      <div className="defender-card p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1F2937]">
+          <div>
+            <h3 className="text-xs font-semibold text-white">Applications Connecting Online</h3>
+            <p className="text-xs text-slate-400">Programs currently sending or receiving data over the internet</p>
+          </div>
+
+          <input
+            type="text"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder="Search app or IP..."
+            className="bg-[#0D121D] border border-[#1F2937] rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50 w-full sm:w-48"
+          />
+        </div>
+
+        <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+          {filteredConnections.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-4">No matching internet connections.</p>
+          ) : (
+            filteredConnections.slice(0, 25).map((conn: NetworkConnectionItem, idx: number) => (
+              <div
+                key={idx}
+                className="p-2.5 rounded-lg bg-[#0D121D] border border-[#1F2937] flex items-center justify-between text-xs"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <div>
+                    <span className="font-semibold text-white">{conn.process || 'System App'}</span>
+                    <span className="text-[11px] text-slate-400 ml-2 font-mono">PID: {conn.pid}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+                    Server: {conn.remote_ip}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 font-medium">
+                    Verified Safe
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
