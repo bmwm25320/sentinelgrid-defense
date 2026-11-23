@@ -28,7 +28,6 @@ SetupIconFile=..\sentinelgrid.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-WizardSmallImageFile=..\sentinelgrid.ico
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
