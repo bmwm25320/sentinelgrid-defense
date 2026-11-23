@@ -10,7 +10,7 @@ import {
   EyeOff,
   ArrowLeft,
   Sparkles,
-  ShieldCheck,
+  Mail,
 } from 'lucide-react';
 import type { AuthUser } from '../types';
 import {
@@ -34,6 +34,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [redirectChecking, setRedirectChecking] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [emailInput, setEmailInput] = useState('');
 
   // Vault PIN state
   const [vaultPin, setVaultPin] = useState('');
@@ -73,7 +74,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
 
     if (!isFirebaseConfigured) {
       setErrorMsg(
-        'Real Google OAuth requires VITE_FIREBASE_* keys in your .env file. See .env.example. You can use SuperAdmin Stage Mode below to test immediately.'
+        'Real Google OAuth requires VITE_FIREBASE_* keys in your .env file. See .env.example. You can sign in with your email or demo below.'
       );
       setLoading(false);
       return;
@@ -89,20 +90,30 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // Demo SuperAdmin Sign-In (bmwm25320@gmail.com)
-  const handleAdminDemoSignIn = async () => {
+  // Sign in via email input: if and only if email is bmwm25320@gmail.com, Admin access is granted
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = emailInput.trim();
+    if (!raw) return;
+
+    // Normalize email (if user enters 'bmwm25320', normalize to 'bmwm25320@gmail.com')
+    const normalizedEmail = raw.includes('@') ? raw.toLowerCase() : `${raw.toLowerCase()}@gmail.com`;
+
     setLoading(true);
     setErrorMsg(null);
     try {
-      const adminUser: AuthUser = {
-        uid: 'google_oauth_admin_982341',
-        email: ADMIN_EMAIL,
-        displayName: 'SuperAdmin (Master Controller)',
-        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+      const isSuperAdmin = normalizedEmail === ADMIN_EMAIL.toLowerCase();
+      const user: AuthUser = {
+        uid: `user_${normalizedEmail.replace(/[^a-z0-9]/g, '_')}`,
+        email: normalizedEmail,
+        displayName: isSuperAdmin ? 'SuperAdmin (Master Controller)' : normalizedEmail.split('@')[0],
+        photoURL: isSuperAdmin
+          ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
         isDemo: true,
       };
-      await recordLoginAuditLog(adminUser, false);
-      setPendingUser(adminUser);
+      await recordLoginAuditLog(user, false);
+      setPendingUser(user);
       setVaultPin('1234');
       setStep('vault_pin');
     } catch (e: any) {
@@ -262,38 +273,46 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
               <div className="flex items-center gap-3 my-2">
                 <div className="flex-1 h-px bg-[#1E293B]" />
                 <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">
-                  or instant stage access
+                  or continue with account email
                 </span>
                 <div className="flex-1 h-px bg-[#1E293B]" />
               </div>
 
-              {/* SuperAdmin Demo Sign-In Button */}
-              <button
-                onClick={handleAdminDemoSignIn}
-                disabled={loading}
-                className="w-full flex items-center justify-between py-2.5 px-4 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-200 border border-purple-500/40 transition-all text-xs font-semibold group disabled:opacity-50"
-              >
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-purple-400" />
-                  <div className="text-left">
-                    <div>SuperAdmin Sign-In ({ADMIN_EMAIL})</div>
-                    <div className="text-[10px] text-purple-300/80 font-normal">Full Admin Audit Center &amp; CSV access</div>
-                  </div>
+              {/* Email Sign-In Form */}
+              <form onSubmit={handleEmailSignIn} className="space-y-2">
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="Enter email (e.g. bmwm25320@gmail.com)"
+                    disabled={loading}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0B101B] border border-[#23334A] focus:border-emerald-500/60 focus:outline-none text-xs text-white placeholder-slate-500 transition-colors"
+                  />
                 </div>
-                <ArrowRight className="w-3.5 h-3.5 text-purple-400 group-hover:translate-x-0.5 transition-transform" />
-              </button>
+                <button
+                  type="submit"
+                  disabled={loading || !emailInput.trim()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-colors shadow-lg shadow-emerald-950/50 disabled:opacity-50"
+                >
+                  <span>Continue with Email</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </form>
 
               {/* Operator Demo Sign-In Button */}
               <button
+                type="button"
                 onClick={handleDemoSignIn}
                 disabled={loading}
-                className="w-full flex items-center justify-between py-2 px-4 rounded-xl bg-[#131C2E] hover:bg-[#182338] text-slate-300 border border-[#23334A] transition-all text-xs font-medium group disabled:opacity-50"
+                className="w-full flex items-center justify-between py-2 px-4 rounded-xl bg-[#131C2E]/60 hover:bg-[#182338] text-slate-400 hover:text-slate-200 border border-[#23334A]/60 transition-all text-xs font-medium group disabled:opacity-50"
               >
                 <div className="flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-emerald-400" />
                   <span>Standard User Demo Sign-In</span>
                 </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:translate-x-0.5 transition-transform" />
               </button>
             </div>
 
