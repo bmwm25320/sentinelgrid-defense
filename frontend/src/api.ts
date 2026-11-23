@@ -262,6 +262,10 @@ export const api = {
     return `${BASE_URL}/api/download/android-apk`;
   },
 
+  getWindowsSetupUrl: (): string => {
+    return `${BASE_URL}/api/download/windows-setup`;
+  },
+
   logLoginAudit: async (entry: LoginAuditLog): Promise<{ status: string; log: LoginAuditLog }> => {
     const res = await fetch(`${BASE_URL}/api/audit/login`, {
       method: 'POST',

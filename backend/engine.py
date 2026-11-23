@@ -1899,10 +1899,40 @@ def seed_audit_demo(payload: SeedAuditRequest):
     records = init_audit_logs_seed()
     return {"status": "seeded", "count": len(records)}
 
-# ==================== ANDROID APK RELEASE & DOWNLOAD ====================
+# ==================== ANDROID APK & WINDOWS INSTALLER DOWNLOADS ====================
 RELEASES_DIR = os.path.join(BASE_DIR, "releases")
 os.makedirs(RELEASES_DIR, exist_ok=True)
 APK_PATH = os.path.join(RELEASES_DIR, "SentinelGrid_Defense_v1.0.apk")
+SETUP_EXE_PATH = os.path.join(RELEASES_DIR, "SentinelGrid_Setup_v1.0.exe")
+PORTABLE_EXE_PATH = os.path.join(RELEASES_DIR, "SentinelGrid_Defense_v1.0.exe")
+
+@app.get("/api/download/windows-setup")
+def download_windows_setup():
+    if not os.path.exists(SETUP_EXE_PATH):
+        raise HTTPException(
+            status_code=404,
+            detail="Windows Setup Installer is currently assembling or awaiting compilation."
+        )
+
+    return FileResponse(
+        SETUP_EXE_PATH,
+        media_type="application/x-msdownload",
+        filename="SentinelGrid_Setup_v1.0.exe"
+    )
+
+@app.get("/api/download/windows-portable")
+def download_windows_portable():
+    if not os.path.exists(PORTABLE_EXE_PATH):
+        raise HTTPException(
+            status_code=404,
+            detail="Windows Portable executable is currently assembling or awaiting compilation."
+        )
+
+    return FileResponse(
+        PORTABLE_EXE_PATH,
+        media_type="application/x-msdownload",
+        filename="SentinelGrid_Defense_v1.0.exe"
+    )
 
 @app.get("/api/download/android-apk")
 def download_android_apk():

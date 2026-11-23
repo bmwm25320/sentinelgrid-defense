@@ -5,6 +5,7 @@ import {
   Download,
   ShieldCheck,
   CheckCircle2,
+  Monitor,
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -18,6 +19,7 @@ export const MobileApkModal: React.FC<MobileApkModalProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   const apkUrl = api.getAndroidApkUrl();
+  const windowsSetupUrl = api.getWindowsSetupUrl();
 
   const handleDownload = () => {
     setDownloadStarted(true);
@@ -28,6 +30,15 @@ export const MobileApkModal: React.FC<MobileApkModalProps> = ({ isOpen, onClose 
     link.click();
     document.body.removeChild(link);
     setTimeout(() => setDownloadStarted(false), 4000);
+  };
+
+  const handleDownloadWindows = () => {
+    const link = document.createElement('a');
+    link.href = windowsSetupUrl;
+    link.download = 'SentinelGrid_Setup_v1.0.exe';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -62,11 +73,44 @@ export const MobileApkModal: React.FC<MobileApkModalProps> = ({ isOpen, onClose 
 
         {/* Modal Body */}
         <div className="p-6 space-y-5">
-          {/* Main Download Card */}
+          {/* Windows Setup Installer Card */}
+          <div className="p-5 rounded-xl bg-gradient-to-r from-[#0C1B24] to-[#0E1E33] border border-cyan-500/40 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-4 h-4 text-cyan-400" />
+                  <h4 className="text-sm font-bold text-white">SentinelGrid_Setup_v1.0.exe</h4>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Official Windows 10/11 Setup Wizard (64-bit)
+                </p>
+                <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-2">
+                  <span>Native Desktop Window</span>
+                  <span>•</span>
+                  <span>System Tray Guardian</span>
+                  <span>•</span>
+                  <span>~34 MB</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleDownloadWindows}
+                className="px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/25 transition-all shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download .EXE</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Android APK Download Card */}
           <div className="p-5 rounded-xl bg-gradient-to-r from-[#0C1B24] to-[#0F1728] border border-emerald-500/40 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h4 className="text-sm font-bold text-white">SentinelGrid_Defense_v1.0.apk</h4>
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-sm font-bold text-white">SentinelGrid_Defense_v1.0.apk</h4>
+                </div>
                 <p className="text-xs text-slate-300 mt-0.5">
                   Package ID: <code className="text-emerald-400 font-mono">com.sentinelgrid.defense</code>
                 </p>
@@ -75,7 +119,7 @@ export const MobileApkModal: React.FC<MobileApkModalProps> = ({ isOpen, onClose 
                   <span>•</span>
                   <span>Capacitor Native Shell</span>
                   <span>•</span>
-                  <span>Signed Package</span>
+                  <span>~416 KB</span>
                 </div>
               </div>
 

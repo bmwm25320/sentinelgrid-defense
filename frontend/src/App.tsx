@@ -13,7 +13,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { api } from './api';
 import { auth, fbSignOut } from './firebase';
 import type { Telemetry, AlertItem, QuarantineItem, ShieldConfig, DeviceAudit, SmartScanState, AuthUser } from './types';
-import { WifiOff, Smartphone, LogOut } from 'lucide-react';
+import { WifiOff, Smartphone, LogOut, Download } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
@@ -199,7 +199,18 @@ export default function App() {
             </h2>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Download Windows Installer Button */}
+            <a
+              href={api.getWindowsSetupUrl()}
+              download="SentinelGrid_Setup_v1.0.exe"
+              className="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Download Windows Setup Wizard (.EXE)"
+            >
+              <Download className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">Windows Installer (.EXE)</span>
+            </a>
+
             {/* Download Mobile APK Button */}
             <button
               onClick={() => setIsMobileModalOpen(true)}
