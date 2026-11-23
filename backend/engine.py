@@ -730,6 +730,7 @@ def root():
         "status": "OPERATIONAL"
     }
 
+@app.get("/api/health")
 @app.get("/api/status")
 def get_api_status():
     return {
