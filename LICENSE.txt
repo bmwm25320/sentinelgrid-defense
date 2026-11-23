@@ -1,0 +1,73 @@
+================================================================================
+           SENTINELGRID DEFENSE SUITE // END-USER LICENSE AGREEMENT (EULA)
+                       VERSION 1.0.4 (ENTERPRISE & PERSONAL)
+================================================================================
+
+PLEASE READ THIS END-USER LICENSE AGREEMENT ("AGREEMENT") CAREFULLY BEFORE
+INSTALLING, COPYING, OR USING SENTINELGRID DEFENSE ("THE SOFTWARE"). BY CLICKING
+"I ACCEPT THE AGREEMENT" OR INSTALLING THE SOFTWARE, YOU AGREE TO BE BOUND BY
+THE TERMS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT INSTALL THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+1. GRANT OF LICENSE
+--------------------------------------------------------------------------------
+SentinelGrid Systems ("Licensor") grants you a personal, non-exclusive, non-
+transferable, and royalty-free license to install, execute, and use SentinelGrid
+Defense on your personal computing devices (Windows and Android) solely for
+endpoint protection, malware threat response, and device security management.
+
+--------------------------------------------------------------------------------
+2. REAL-TIME DEFENSE & AUTONOMOUS TRIPWIRE SAFEGUARDS
+--------------------------------------------------------------------------------
+SentinelGrid Defense incorporates an active multi-layer defense engine:
+  (a) Static YARA & Signature Matching (Layer 1)
+  (b) Sub-Millisecond Ransomware Canary & Process Guillotine (Layer 2)
+  (c) Memory Entropy Heuristics & Anomalous Spawn Detection (Layer 3)
+  (d) Network Port Guard & Outbound Firewall Telemetry (Layer 4)
+
+You acknowledge that the software operates an autonomous Watchdog tripwire in
+monitored protected directories to detect uninvited file encryption and may
+terminate suspicious processes and isolate malicious payloads into the encrypted
+Quarantine Vault to prevent data destruction.
+
+--------------------------------------------------------------------------------
+3. ENCRYPTED PASSWORD VAULT & CRYPTOGRAPHY
+--------------------------------------------------------------------------------
+SentinelGrid Defense provides local, client-side AES-256-Fernet encryption
+derived via PBKDF2HMAC-SHA256 (100,000 iterations) from your dedicated Vault PIN.
+Licensor does not possess, transmit, or store your unencrypted master PIN or
+decrypted credentials. You are solely responsible for memorizing your dedicated
+Vault PIN; losing your PIN may result in permanent inability to decrypt credentials.
+
+--------------------------------------------------------------------------------
+4. CENTRALIZED OAUTH AUDIT LOGGING
+--------------------------------------------------------------------------------
+When using Google OAuth Redirect Sign-In, non-sensitive access telemetry
+(User UID, Email, Platform, Timestamp, and Event Type) is transmitted to the
+centralized audit registry for administrative posture compliance. No passwords,
+keystrokes, private documents, or personal files are ever transmitted off-device.
+
+--------------------------------------------------------------------------------
+5. PROPRIETARY RIGHTS & RESTRICTIONS
+--------------------------------------------------------------------------------
+You may not:
+  (a) Reverse engineer, decompile, or disassemble the security engine binaries,
+      except to the extent permitted by applicable open-source components.
+  (b) Rent, lease, sublicense, or distribute the compiled setup binaries for
+      unauthorized commercial sale.
+  (c) Defeat, disable, or tamper with the kernel safety process whitelists.
+
+--------------------------------------------------------------------------------
+6. DISCLAIMER OF WARRANTIES & LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY
+KIND. WHILE SENTINELGRID DEFENSE EMPLOYS INDUSTRY-STANDARD HEURISTIC AND CANARY
+PROTECTIONS, LICENSOR DOES NOT GUARANTEE THAT THE SOFTWARE WILL PREVENT 100% OF
+ALL EMERGING ZERO-DAY THREATS. IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY
+INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE
+OR INABILITY TO USE THE SOFTWARE.
+
+================================================================================
+Copyright (c) 2026 SentinelGrid Systems. All rights reserved.
+Official Release: SentinelGrid Defense v1.0.4 // Kaspersky-Grade EDR
+================================================================================

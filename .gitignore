@@ -9,6 +9,7 @@ build/
 *.spec
 
 # Distribution output
+dist/
 frontend/dist/
 
 # Quarantine and protected test zones

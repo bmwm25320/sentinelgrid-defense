@@ -1929,8 +1929,20 @@ def download_android_apk():
     )
 
 # ==================== FRONTEND STATIC SPA HOSTING ====================
-FRONTEND_DIST = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist"))
-if os.path.exists(FRONTEND_DIST):
+candidate_dists = [
+    os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "dist")),
+    os.path.abspath(os.path.join(BASE_DIR, "frontend", "dist")),
+    os.path.abspath(os.path.join(getattr(sys, '_MEIPASS', ''), "frontend", "dist")),
+    os.path.abspath(os.path.join(getattr(sys, '_MEIPASS', ''), "dist")),
+    os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")),
+]
+FRONTEND_DIST = None
+for cd in candidate_dists:
+    if cd and os.path.exists(cd) and os.path.isdir(cd):
+        FRONTEND_DIST = cd
+        break
+
+if FRONTEND_DIST and os.path.exists(FRONTEND_DIST):
     from fastapi.staticfiles import StaticFiles
     from starlette.responses import FileResponse
 
