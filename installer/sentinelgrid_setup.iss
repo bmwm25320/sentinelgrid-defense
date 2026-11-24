@@ -67,7 +67,7 @@ var
   ResultCode: Integer;
 begin
   Result := '';
-  // Terminate any running instances of SentinelGrid Defense before overwriting files
-  Exec('taskkill.exe', '/F /IM SentinelGridDefense.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(500);
+  // Forcefully terminate any running instances of SentinelGrid Defense before extracting files
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM SentinelGridDefense.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1000);
 end;
