@@ -62,6 +62,15 @@ export const api = {
     return handleResponse<any>(res);
   },
 
+  scanDefenderDeep: async (target_path: string, quarantine_on_threat: boolean = true): Promise<any> => {
+    const res = await fetch(`${BASE_URL}/api/scan/defender-deep`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_path, quarantine_on_threat }),
+    });
+    return handleResponse<any>(res);
+  },
+
   terminateProcess: async (pid: number): Promise<{ status: string; pid: number; name?: string }> => {
     const res = await fetch(`${BASE_URL}/api/process/terminate`, {
       method: 'POST',

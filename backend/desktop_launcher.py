@@ -80,8 +80,31 @@ def wait_for_health(timeout: float = 12.0) -> bool:
 def run_uvicorn():
     try:
         import uvicorn
-        from engine import app
-        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+        app = None
+        try:
+            from backend.engine import app
+        except ImportError:
+            try:
+                from engine import app
+            except ImportError:
+                import importlib.util
+                engine_candidates = [
+                    os.path.join(BASE_DIR, "engine.py"),
+                    os.path.join(BASE_DIR, "backend", "engine.py"),
+                    os.path.join(getattr(sys, '_MEIPASS', ''), "backend", "engine.py"),
+                    os.path.join(getattr(sys, '_MEIPASS', ''), "engine.py"),
+                ]
+                for c in engine_candidates:
+                    if os.path.exists(c):
+                        spec = importlib.util.spec_from_file_location("engine", c)
+                        mod = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(mod)
+                        app = getattr(mod, "app", None)
+                        break
+        if app:
+            uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+        else:
+            print("Engine app could not be resolved.")
     except Exception as e:
         print(f"Error starting engine: {e}")
 

@@ -21,6 +21,8 @@ import {
   googleProvider,
   getAdditionalUserInfo,
   recordLoginAuditLog,
+  handleGoogleRedirectResult,
+  signInWithGoogleRedirect,
   isFirebaseConfigured,
   auth,
   onAuthStateChanged,
@@ -48,6 +50,12 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   const [showPin, setShowPin] = useState(false);
   const [pinNotice, setPinNotice] = useState<string | null>(null);
 
+  const completeLogin = (user: AuthUser, initialPin?: string) => {
+    setPendingUser(user);
+    localStorage.setItem('sentinelgrid_user', JSON.stringify(user));
+    onLoginSuccess(user, initialPin);
+  };
+
   // Check for persistent auth state on page load or session restoration
   useEffect(() => {
     let active = true;
@@ -69,7 +77,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    // 0. If user is already authenticated in Firebase, advance immediately
+    // 0. If user is already authenticated in Firebase, advance immediately to dashboard
     if (auth.currentUser) {
       const u = auth.currentUser;
       const existingUser: AuthUser = {
@@ -79,12 +87,31 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
         photoURL: u.photoURL,
         isDemo: false,
       };
-      setPendingUser(existingUser);
-      setStep('vault_pin');
+      completeLogin(existingUser);
       setRedirectChecking(false);
+      return;
     }
 
-    // 1. Attach onAuthStateChanged listener to catch sessions restored from storage or popup completion
+    // 1. Process getRedirectResult if returning from an OAuth redirect
+    handleGoogleRedirectResult()
+      .then((result) => {
+        if (result && active) {
+          completeLogin(result.user);
+        }
+      })
+      .catch((err: any) => {
+        if (active) {
+          console.warn('Redirect auth handler warning:', err);
+          if (err?.code !== 'auth/popup-closed-by-user') {
+            setErrorMsg(err.message || 'Google Redirect callback processing failed.');
+          }
+        }
+      })
+      .finally(() => {
+        if (active) setRedirectChecking(false);
+      });
+
+    // 2. Attach onAuthStateChanged listener to catch sessions restored from storage or popup completion
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!active) return;
       if (firebaseUser) {
@@ -103,8 +130,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
         }
 
         if (active) {
-          setPendingUser(authUser);
-          setStep('vault_pin');
+          completeLogin(authUser);
           setRedirectChecking(false);
         }
       } else {
@@ -173,8 +199,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
             console.warn('Audit record warning:', auditErr);
           }
 
-          setPendingUser(authUser);
-          setStep('vault_pin');
+          completeLogin(authUser);
         }
       } catch (err: any) {
         console.error('Native Google Sign-In error:', err);
@@ -191,8 +216,8 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    // Case 2: Web Browser & Windows Desktop WebView2
-    // Calls signInWithPopup directly inside user gesture onClick handler without awaiting
+    // Case 2: Web Browser & Windows Desktop App
+    // Calls signInWithPopup directly inside user gesture onClick handler
     signInWithPopup(auth, googleProvider)
       .then(async (cred) => {
         if (cred && cred.user) {
@@ -214,14 +239,21 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
             console.warn('Audit record warning:', auditErr);
           }
 
-          setPendingUser(authUser);
-          setStep('vault_pin');
+          completeLogin(authUser);
         }
       })
-      .catch((err: any) => {
+      .catch(async (err: any) => {
         console.error('Google sign-in popup error:', err);
         if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
-          setErrorMsg('Sign-in cancelled (popup was closed).');
+          setErrorMsg('Sign-in was cancelled.');
+        } else if (err?.code === 'auth/popup-blocked') {
+          // If popup is blocked, attempt redirect fallback
+          setErrorMsg('Popup was blocked. Redirecting to Google Sign-In...');
+          try {
+            await signInWithGoogleRedirect();
+          } catch (rErr: any) {
+            setErrorMsg(`Google Redirect failed: ${rErr?.message || rErr}`);
+          }
         } else {
           const code = err?.code ? `[${err.code}] ` : '';
           const msg = err?.message || 'Google sign-in failed.';
@@ -246,9 +278,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
         isDemo: true,
       };
       await recordLoginAuditLog(demoUser, false);
-      setPendingUser(demoUser);
-      setVaultPin('1234');
-      setStep('vault_pin');
+      completeLogin(demoUser, '1234');
     } catch (e: any) {
       setErrorMsg(e.message);
     } finally {

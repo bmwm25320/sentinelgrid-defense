@@ -14,6 +14,7 @@ import {
   Plus,
   FolderCheck,
   Laptop,
+  ShieldCheck,
 } from 'lucide-react';
 import type { ShieldConfig, AlertItem, QuarantineItem, SmartScanState } from '../types';
 import { api } from '../api';
@@ -48,6 +49,9 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
   const [folderPath, setFolderPath] = useState('backend/protected_zone');
   const [folderScanning, setFolderScanning] = useState(false);
   const [folderScanResult, setFolderScanResult] = useState<any>(null);
+  const [defenderPath, setDefenderPath] = useState('Downloads');
+  const [defenderScanning, setDefenderScanning] = useState(false);
+  const [defenderResult, setDefenderResult] = useState<any>(null);
   const [isDemoOpen, setIsDemoOpen] = useState(false);
   const [isFastScanOpen, setIsFastScanOpen] = useState(false);
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
@@ -119,6 +123,21 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
     }
   };
 
+  const handleDefenderDeepScan = async () => {
+    if (!defenderPath.trim()) return;
+    setDefenderScanning(true);
+    setDefenderResult(null);
+    try {
+      const res = await api.scanDefenderDeep(defenderPath.trim(), true);
+      setDefenderResult(res);
+      onDataUpdated();
+    } catch (e: any) {
+      alert(`Defender scan error: ${e.message}`);
+    } finally {
+      setDefenderScanning(false);
+    }
+  };
+
   const handleRestore = async (id: string) => {
     setProcessingId(id);
     try {
@@ -182,7 +201,7 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
           <p className="text-xs text-slate-400">Choose how deeply you want to inspect your computer</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           {/* Quick Scan */}
           <div className="defender-card p-5 flex flex-col justify-between">
             <div>
@@ -271,6 +290,35 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
               {folderScanning ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : 'Inspect Folder'}
             </button>
           </div>
+
+          {/* Windows Defender Deep Scan Bridge */}
+          <div className="defender-card p-5 flex flex-col justify-between border-blue-500/30">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-3">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-white">Defender Deep Scan</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Invokes MpCmdRun.exe alongside SentinelGrid Shannon entropy & AMSI.
+              </p>
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={defenderPath}
+                  onChange={(e) => setDefenderPath(e.target.value)}
+                  placeholder="e.g. Downloads or file path"
+                  className="w-full bg-[#0D121D] border border-[#1F2937] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500/50"
+                />
+              </div>
+            </div>
+            <button
+              onClick={handleDefenderDeepScan}
+              disabled={defenderScanning || isScanning}
+              className="mt-4 w-full py-2 px-3 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {defenderScanning ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : 'Defender Bridge Scan'}
+            </button>
+          </div>
         </div>
 
         {/* Live Scan Progress Card */}
@@ -323,6 +371,33 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             <button
               onClick={() => setFolderScanResult(null)}
               className="text-slate-400 hover:text-white"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {/* Defender Deep Scan Result Notice */}
+        {defenderResult && (
+          <div className={`mt-4 p-4 rounded-xl border text-xs text-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${defenderResult.is_threat ? 'bg-red-950/40 border-red-500/50' : 'bg-blue-950/30 border-blue-500/40'}`}>
+            <div className="flex items-center gap-2.5">
+              {defenderResult.is_threat ? (
+                <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-blue-400 shrink-0" />
+              )}
+              <div>
+                <div className="font-semibold text-white">
+                  Windows Defender Verdict: <span className={defenderResult.is_threat ? 'text-red-400' : 'text-blue-300'}>{defenderResult.threat_name}</span>
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Target: <code className="text-slate-300">{defenderResult.target_path}</code> • Entropy: <span className="font-mono text-cyan-300">{defenderResult.sentinelgrid_entropy}/8.0</span> • AMSI: <span className="text-emerald-400">{defenderResult.amsi_status}</span> • Duration: {defenderResult.scan_time_ms}ms
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setDefenderResult(null)}
+              className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded bg-slate-800"
             >
               Dismiss
             </button>

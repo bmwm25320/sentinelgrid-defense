@@ -314,4 +314,4 @@ export async function fetchAuditLogs(adminEmail: string): Promise<LoginAuditLog[
   return res.logs;
 }
 
-export { auth, db, fbSignOut, onAuthStateChanged, signInWithPopup, signInWithCredential, GoogleAuthProvider, getAdditionalUserInfo };
+export { auth, db, fbSignOut, onAuthStateChanged, signInWithPopup, signInWithRedirect, signInWithCredential, GoogleAuthProvider, getAdditionalUserInfo };
