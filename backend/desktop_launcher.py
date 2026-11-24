@@ -11,6 +11,46 @@ import urllib.request
 from PIL import Image, ImageDraw
 import webview
 
+# Configure webview settings for modern desktop security & downloads
+webview.settings["ALLOW_DOWNLOADS"] = True
+
+# Patch Edge Chromium popup handling on Windows so Google OAuth signInWithPopup opens in a
+# native child WebView2 window sharing the CoreWebView2Environment and cookies/storage.
+# This prevents window.close() from closing or blanking the main application window.
+try:
+    from webview.platforms import edgechromium
+    orig_on_new_window = edgechromium.EdgeChrome.on_new_window_request
+
+    def custom_on_new_window_request(self, sender, args):
+        uri = str(args.get_Uri()).lower() if args.get_Uri() else ""
+        features = args.get_WindowFeatures()
+        has_size = features.get_HasSize() if features else False
+
+        # If it is a Google OAuth popup, Firebase auth handler, or popup with dimensions:
+        # Let WebView2 open a native child popup window sharing the session and opener.
+        if (
+            "accounts.google.com" in uri or
+            "firebaseapp.com" in uri or
+            "google.com" in uri or
+            has_size or
+            uri == "about:blank" or
+            not uri
+        ):
+            args.set_Handled(False)
+            return
+
+        # For external links (e.g. documentation, github repository), open in default external browser
+        if webview.settings.get("OPEN_EXTERNAL_LINKS_IN_BROWSER", True):
+            import webbrowser
+            args.set_Handled(True)
+            webbrowser.open(str(args.get_Uri()))
+        else:
+            orig_on_new_window(self, sender, args)
+
+    edgechromium.EdgeChrome.on_new_window_request = custom_on_new_window_request
+except Exception as e:
+    print(f"EdgeChromium popup handling initialization note: {e}")
+
 # Add backend directory to sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:

@@ -115,51 +115,31 @@ export function formatLoginDateTime(date: Date = new Date()) {
 }
 
 /**
- * Initiates Google OAuth Sign-In.
- * In desktop WebView2 (localhost/pywebview), forces full-page redirect to prevent window.close() blank screens.
- * In web browsers, uses popup first for seamless in-place authentication.
+ * Initiates Google OAuth Sign-In via Popup.
+ * Calling signInWithPopup directly ensures compatibility with WebView2 child popup windows
+ * and web browsers without encountering third-party cross-origin storage blocking.
  */
 export async function signInWithGoogle(): Promise<AuthUser | null> {
   if (!auth) {
     throw new Error('Firebase Auth is not initialized. Please configure VITE_FIREBASE_* keys.');
   }
 
-  const isDesktop = Boolean(
-    (typeof window !== 'undefined' && (window as any).pywebview) ||
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1'
-  );
+  const cred: UserCredential = await signInWithPopup(auth, googleProvider);
+  if (cred && cred.user) {
+    const u = cred.user;
+    const additionalInfo = getAdditionalUserInfo(cred);
+    const isNewUser = Boolean(additionalInfo?.isNewUser);
 
-  if (isDesktop) {
-    await signInWithRedirect(auth, googleProvider);
-    return null;
-  }
+    const authUser: AuthUser = {
+      uid: u.uid,
+      email: u.email,
+      displayName: u.displayName || 'Google User',
+      photoURL: u.photoURL,
+      isDemo: false,
+    };
 
-  try {
-    const cred: UserCredential = await signInWithPopup(auth, googleProvider);
-    if (cred && cred.user) {
-      const u = cred.user;
-      const additionalInfo = getAdditionalUserInfo(cred);
-      const isNewUser = Boolean(additionalInfo?.isNewUser);
-
-      const authUser: AuthUser = {
-        uid: u.uid,
-        email: u.email,
-        displayName: u.displayName || 'Google User',
-        photoURL: u.photoURL,
-        isDemo: false,
-      };
-
-      await recordLoginAuditLog(authUser, isNewUser);
-      return authUser;
-    }
-  } catch (popupErr: any) {
-    console.warn('Google Popup sign-in notice / attempting redirect fallback:', popupErr);
-    if (popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
-      throw new Error('Google Sign-In was cancelled.');
-    }
-    // Fall back to redirect
-    await signInWithRedirect(auth, googleProvider);
+    await recordLoginAuditLog(authUser, isNewUser);
+    return authUser;
   }
   return null;
 }
@@ -302,4 +282,4 @@ export async function fetchAuditLogs(adminEmail: string): Promise<LoginAuditLog[
   return res.logs;
 }
 
-export { auth, db, fbSignOut, onAuthStateChanged };
+export { auth, db, fbSignOut, onAuthStateChanged, signInWithPopup, getAdditionalUserInfo };

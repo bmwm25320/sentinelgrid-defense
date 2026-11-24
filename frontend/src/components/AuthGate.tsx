@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import type { AuthUser } from '../types';
 import {
-  signInWithGoogle,
-  handleGoogleRedirectResult,
+  signInWithPopup,
+  googleProvider,
+  getAdditionalUserInfo,
   recordLoginAuditLog,
   isFirebaseConfigured,
   auth,
@@ -42,7 +43,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   const [showPin, setShowPin] = useState(false);
   const [pinNotice, setPinNotice] = useState<string | null>(null);
 
-  // Check for Google OAuth Redirect response or persistent auth state on page load
+  // Check for persistent auth state on page load or session restoration
   useEffect(() => {
     let active = true;
 
@@ -66,29 +67,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       setRedirectChecking(false);
     }
 
-    // 1. Process getRedirectResult if returning from an OAuth redirect
-    handleGoogleRedirectResult()
-      .then((result) => {
-        if (result && active) {
-          setPendingUser(result.user);
-          setStep('vault_pin');
-        }
-      })
-      .catch((err: any) => {
-        if (active) {
-          console.warn('Redirect auth handler warning:', err);
-          if (err?.code !== 'auth/popup-closed-by-user') {
-            setErrorMsg(err.message || 'Google Redirect callback processing failed.');
-          }
-        }
-      })
-      .finally(() => {
-        if (active) setRedirectChecking(false);
-      });
-
-    // 2. ALSO attach onAuthStateChanged listener!
-    // Catches users when Firebase restores the auth session from storage,
-    // or when the redirect/popup token completes parsing.
+    // 1. Attach onAuthStateChanged listener to catch sessions restored from storage or popup completion
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!active) return;
       if (firebaseUser) {
@@ -111,8 +90,12 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
           setStep('vault_pin');
           setRedirectChecking(false);
         }
+      } else {
+        if (active) setRedirectChecking(false);
       }
     });
+
+    setRedirectChecking(false);
 
     return () => {
       active = false;
@@ -120,31 +103,56 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
     };
   }, []);
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-
-    if (!isFirebaseConfigured) {
+  const handleGoogleSignIn = () => {
+    if (!auth || !isFirebaseConfigured) {
       setErrorMsg(
         'Real Google OAuth requires VITE_FIREBASE_* keys in your .env file. See .env.example. You can use Standard User Demo Sign-In below for evaluation.'
       );
-      setLoading(false);
       return;
     }
 
-    try {
-      // Initiates Google OAuth with popup-first and redirect-fallback
-      const user = await signInWithGoogle();
-      if (user) {
-        setPendingUser(user);
-        setStep('vault_pin');
-      }
-    } catch (err: any) {
-      console.warn('Google sign-in failed:', err);
-      setErrorMsg(err.message || 'Could not complete Google Sign-In.');
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true);
+    setErrorMsg(null);
+
+    // Call signInWithPopup directly inside onClick handler (do not await anything beforehand)
+    signInWithPopup(auth, googleProvider)
+      .then(async (cred) => {
+        if (cred && cred.user) {
+          const u = cred.user;
+          const additionalInfo = getAdditionalUserInfo ? getAdditionalUserInfo(cred) : null;
+          const isNewUser = Boolean(additionalInfo?.isNewUser);
+
+          const authUser: AuthUser = {
+            uid: u.uid,
+            email: u.email,
+            displayName: u.displayName || 'Google User',
+            photoURL: u.photoURL,
+            isDemo: false,
+          };
+
+          try {
+            await recordLoginAuditLog(authUser, isNewUser);
+          } catch (auditErr) {
+            console.warn('Audit record warning:', auditErr);
+          }
+
+          setPendingUser(authUser);
+          setStep('vault_pin');
+        }
+      })
+      .catch((err: any) => {
+        console.error('Google sign-in popup error:', err);
+        if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+          setErrorMsg('Sign-in cancelled (popup was closed).');
+        } else {
+          const code = err?.code ? `[${err.code}] ` : '';
+          const msg = err?.message || 'Google sign-in failed.';
+          setErrorMsg(`${code}${msg}`);
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   };
 
   // Demo Security Operator Sign-In
@@ -248,25 +256,26 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
               </div>
               <h2 className="text-base font-semibold text-white">Sign In to SentinelGrid</h2>
               <p className="text-xs text-slate-400">
-                Official Google OAuth Redirect · Cross-platform Central Audit Logging
+                Official Google OAuth · Central Audit Protected
               </p>
             </div>
 
             {redirectChecking && (
               <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 text-xs text-center flex items-center justify-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                <span>Checking Google OAuth redirect status...</span>
+                <span>Checking authentication status...</span>
               </div>
             )}
 
             {errorMsg && (
-              <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs text-center">
+              <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs text-left font-mono break-words leading-relaxed shadow-lg">
+                <span className="font-semibold text-amber-200 block mb-0.5">Authentication Error:</span>
                 {errorMsg}
               </div>
             )}
 
             <div className="space-y-3">
-              {/* Real Google OAuth Redirect Button */}
+              {/* Real Google OAuth Button */}
               <button
                 onClick={handleGoogleSignIn}
                 disabled={loading || redirectChecking}
@@ -290,7 +299,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>{loading ? 'Signing in with Google...' : 'Sign in with Google'}</span>
+                <span>{loading ? 'Authenticating with Google...' : 'Sign in with Google'}</span>
               </button>
 
               {/* Divider */}
