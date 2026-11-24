@@ -4,4 +4,6 @@
     <string name="title_activity_main">SentinelGrid Defense</string>
     <string name="package_name">com.sentinelgrid.defense</string>
     <string name="custom_url_scheme">com.sentinelgrid.defense</string>
+    <string name="server_client_id">693966093694-s9sa9fuhdbbl197a7461sml1u5bleq6s.apps.googleusercontent.com</string>
+    <string name="default_web_client_id">693966093694-s9sa9fuhdbbl197a7461sml1u5bleq6s.apps.googleusercontent.com</string>
 </resources>

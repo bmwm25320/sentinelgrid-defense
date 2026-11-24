@@ -9,9 +9,13 @@ const config: CapacitorConfig = {
     cleartext: true,
   },
   plugins: {
-    // Deep linking and custom scheme callback for Google OAuth Redirect
     App: {
       urlScheme: 'com.sentinelgrid.defense',
+    },
+    SocialLogin: {
+      google: {
+        webClientId: '693966093694-s9sa9fuhdbbl197a7461sml1u5bleq6s.apps.googleusercontent.com',
+      },
     },
   },
 };

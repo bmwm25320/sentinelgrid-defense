@@ -12,14 +12,19 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { AuthUser } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { SocialLogin } from '@capgo/capacitor-social-login';
 import {
   signInWithPopup,
+  signInWithCredential,
+  GoogleAuthProvider,
   googleProvider,
   getAdditionalUserInfo,
   recordLoginAuditLog,
   isFirebaseConfigured,
   auth,
   onAuthStateChanged,
+  GOOGLE_WEB_CLIENT_ID,
 } from '../firebase';
 import { api } from '../api';
 
@@ -46,6 +51,18 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   // Check for persistent auth state on page load or session restoration
   useEffect(() => {
     let active = true;
+
+    // Initialize native Google Sign-In plugin on mobile platforms
+    if (Capacitor.isNativePlatform()) {
+      SocialLogin.initialize({
+        google: {
+          webClientId: GOOGLE_WEB_CLIENT_ID,
+          mode: 'online',
+        },
+      }).catch((err) => {
+        console.warn('Native SocialLogin.initialize notice:', err);
+      });
+    }
 
     if (!auth) {
       setRedirectChecking(false);
@@ -103,7 +120,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
     };
   }, []);
 
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     if (!auth || !isFirebaseConfigured) {
       setErrorMsg(
         'Real Google OAuth requires VITE_FIREBASE_* keys in your .env file. See .env.example. You can use Standard User Demo Sign-In below for evaluation.'
@@ -114,7 +131,68 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
     setLoading(true);
     setErrorMsg(null);
 
-    // Call signInWithPopup directly inside onClick handler (do not await anything beforehand)
+    // Case 1: Native Android (Capacitor Native Platform)
+    // Avoids Chromium WebView's partitioned storage / missing initial state bug entirely
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await SocialLogin.initialize({
+          google: {
+            webClientId: GOOGLE_WEB_CLIENT_ID,
+            mode: 'online',
+          },
+        }).catch(() => {});
+
+        const loginRes = await SocialLogin.login({
+          provider: 'google',
+          options: {},
+        });
+
+        const idToken = (loginRes?.result as any)?.idToken;
+        if (!idToken) {
+          throw new Error('Google native authentication did not return an ID token.');
+        }
+
+        const credential = GoogleAuthProvider.credential(idToken);
+        const cred = await signInWithCredential(auth, credential);
+        if (cred && cred.user) {
+          const u = cred.user;
+          const additionalInfo = getAdditionalUserInfo ? getAdditionalUserInfo(cred) : null;
+          const isNewUser = Boolean(additionalInfo?.isNewUser);
+
+          const authUser: AuthUser = {
+            uid: u.uid,
+            email: u.email,
+            displayName: u.displayName || 'Google User',
+            photoURL: u.photoURL,
+            isDemo: false,
+          };
+
+          try {
+            await recordLoginAuditLog(authUser, isNewUser, 'Android Mobile');
+          } catch (auditErr) {
+            console.warn('Audit record warning:', auditErr);
+          }
+
+          setPendingUser(authUser);
+          setStep('vault_pin');
+        }
+      } catch (err: any) {
+        console.error('Native Google Sign-In error:', err);
+        if (err?.message?.includes('USER_CANCELLED') || err?.code === 'USER_CANCELLED') {
+          setErrorMsg('Sign-in was cancelled.');
+        } else {
+          const code = err?.code ? `[${err.code}] ` : '';
+          const msg = err?.message || 'Native Google Sign-In failed.';
+          setErrorMsg(`${code}${msg}`);
+        }
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Case 2: Web Browser & Windows Desktop WebView2
+    // Calls signInWithPopup directly inside user gesture onClick handler without awaiting
     signInWithPopup(auth, googleProvider)
       .then(async (cred) => {
         if (cred && cred.user) {

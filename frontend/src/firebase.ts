@@ -4,6 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithRedirect,
   signInWithPopup,
+  signInWithCredential,
   getRedirectResult,
   onAuthStateChanged,
   signOut as fbSignOut,
@@ -26,6 +27,7 @@ import type { AuthUser, LoginAuditLog } from './types';
 import { api } from './api';
 
 export const ADMIN_EMAIL = 'bmwm25320@gmail.com';
+export const GOOGLE_WEB_CLIENT_ID = '693966093694-s9sa9fuhdbbl197a7461sml1u5bleq6s.apps.googleusercontent.com';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -139,6 +141,36 @@ export async function signInWithGoogle(): Promise<AuthUser | null> {
     };
 
     await recordLoginAuditLog(authUser, isNewUser);
+    return authUser;
+  }
+  return null;
+}
+
+/**
+ * Signs in using native Google Sign-In on mobile (Capacitor Android/iOS)
+ * using an ID token passed to signInWithCredential.
+ */
+export async function signInWithGoogleNative(idToken: string): Promise<AuthUser | null> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not initialized. Please configure VITE_FIREBASE_* keys.');
+  }
+
+  const credential = GoogleAuthProvider.credential(idToken);
+  const cred: UserCredential = await signInWithCredential(auth, credential);
+  if (cred && cred.user) {
+    const u = cred.user;
+    const additionalInfo = getAdditionalUserInfo(cred);
+    const isNewUser = Boolean(additionalInfo?.isNewUser);
+
+    const authUser: AuthUser = {
+      uid: u.uid,
+      email: u.email,
+      displayName: u.displayName || 'Google User',
+      photoURL: u.photoURL,
+      isDemo: false,
+    };
+
+    await recordLoginAuditLog(authUser, isNewUser, 'Android Mobile');
     return authUser;
   }
   return null;
@@ -282,4 +314,4 @@ export async function fetchAuditLogs(adminEmail: string): Promise<LoginAuditLog[
   return res.logs;
 }
 
-export { auth, db, fbSignOut, onAuthStateChanged, signInWithPopup, getAdditionalUserInfo };
+export { auth, db, fbSignOut, onAuthStateChanged, signInWithPopup, signInWithCredential, GoogleAuthProvider, getAdditionalUserInfo };
