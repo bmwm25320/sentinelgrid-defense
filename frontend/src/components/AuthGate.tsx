@@ -51,6 +51,21 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       return;
     }
 
+    // 0. If user is already authenticated in Firebase, advance immediately
+    if (auth.currentUser) {
+      const u = auth.currentUser;
+      const existingUser: AuthUser = {
+        uid: u.uid,
+        email: u.email,
+        displayName: u.displayName || 'Google User',
+        photoURL: u.photoURL,
+        isDemo: false,
+      };
+      setPendingUser(existingUser);
+      setStep('vault_pin');
+      setRedirectChecking(false);
+    }
+
     // 1. Process getRedirectResult if returning from an OAuth redirect
     handleGoogleRedirectResult()
       .then((result) => {

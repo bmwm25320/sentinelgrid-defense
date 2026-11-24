@@ -116,12 +116,23 @@ export function formatLoginDateTime(date: Date = new Date()) {
 
 /**
  * Initiates Google OAuth Sign-In.
- * Tries popup first (works instantly in web browsers without navigating away or losing app state).
- * Gracefully falls back to redirect if popups are blocked or unsupported.
+ * In desktop WebView2 (localhost/pywebview), forces full-page redirect to prevent window.close() blank screens.
+ * In web browsers, uses popup first for seamless in-place authentication.
  */
 export async function signInWithGoogle(): Promise<AuthUser | null> {
   if (!auth) {
     throw new Error('Firebase Auth is not initialized. Please configure VITE_FIREBASE_* keys.');
+  }
+
+  const isDesktop = Boolean(
+    (typeof window !== 'undefined' && (window as any).pywebview) ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1'
+  );
+
+  if (isDesktop) {
+    await signInWithRedirect(auth, googleProvider);
+    return null;
   }
 
   try {

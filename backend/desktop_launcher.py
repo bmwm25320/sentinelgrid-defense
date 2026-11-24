@@ -169,7 +169,6 @@ def main():
         pass
 
     try:
-        webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = False
         webview.start(private_mode=False, storage_path=storage_dir)
     except Exception as e:
         print(f"Native webview fallback: {e}")
