@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-APP_URL = "http://127.0.0.1:8000"
+APP_URL = "http://localhost:8000"
 
 def is_port_in_use(port: int = 8000) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -26,13 +26,14 @@ def is_port_in_use(port: int = 8000) -> bool:
 def wait_for_health(timeout: float = 12.0) -> bool:
     start = time.time()
     while time.time() - start < timeout:
-        try:
-            req = urllib.request.Request(f"{APP_URL}/api/health")
-            with urllib.request.urlopen(req, timeout=1.0) as resp:
-                if resp.status == 200:
-                    return True
-        except Exception:
-            pass
+        for url in [f"{APP_URL}/api/health", "http://127.0.0.1:8000/api/health"]:
+            try:
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=1.0) as resp:
+                    if resp.status == 200:
+                        return True
+            except Exception:
+                pass
         time.sleep(0.2)
     return False
 
@@ -40,7 +41,7 @@ def run_uvicorn():
     try:
         import uvicorn
         from engine import app
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+        uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
     except Exception as e:
         print(f"Error starting engine: {e}")
 
@@ -159,9 +160,17 @@ def main():
     except Exception as e:
         print(f"System tray warning: {e}")
 
-    # 4. Start webview on main thread (required on Windows)
+    # 4. Start webview on main thread with persistent user data directory (disabling InPrivate mode so Google OAuth and session state persist)
+    appdata_dir = os.environ.get("APPDATA") or os.path.expanduser("~")
+    storage_dir = os.path.join(appdata_dir, "SentinelGridDefense", "webview_cache")
     try:
-        webview.start()
+        os.makedirs(storage_dir, exist_ok=True)
+    except Exception:
+        pass
+
+    try:
+        webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = False
+        webview.start(private_mode=False, storage_path=storage_dir)
     except Exception as e:
         print(f"Native webview fallback: {e}")
         import webbrowser

@@ -3,6 +3,7 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithRedirect,
+  signInWithPopup,
   getRedirectResult,
   onAuthStateChanged,
   signOut as fbSignOut,
@@ -111,6 +112,45 @@ export function formatLoginDateTime(date: Date = new Date()) {
   const iso_timestamp = date.toISOString();
 
   return { login_date, login_time, iso_timestamp };
+}
+
+/**
+ * Initiates Google OAuth Sign-In.
+ * Tries popup first (works instantly in web browsers without navigating away or losing app state).
+ * Gracefully falls back to redirect if popups are blocked or unsupported.
+ */
+export async function signInWithGoogle(): Promise<AuthUser | null> {
+  if (!auth) {
+    throw new Error('Firebase Auth is not initialized. Please configure VITE_FIREBASE_* keys.');
+  }
+
+  try {
+    const cred: UserCredential = await signInWithPopup(auth, googleProvider);
+    if (cred && cred.user) {
+      const u = cred.user;
+      const additionalInfo = getAdditionalUserInfo(cred);
+      const isNewUser = Boolean(additionalInfo?.isNewUser);
+
+      const authUser: AuthUser = {
+        uid: u.uid,
+        email: u.email,
+        displayName: u.displayName || 'Google User',
+        photoURL: u.photoURL,
+        isDemo: false,
+      };
+
+      await recordLoginAuditLog(authUser, isNewUser);
+      return authUser;
+    }
+  } catch (popupErr: any) {
+    console.warn('Google Popup sign-in notice / attempting redirect fallback:', popupErr);
+    if (popupErr.code === 'auth/popup-closed-by-user' || popupErr.code === 'auth/cancelled-popup-request') {
+      throw new Error('Google Sign-In was cancelled.');
+    }
+    // Fall back to redirect
+    await signInWithRedirect(auth, googleProvider);
+  }
+  return null;
 }
 
 /**

@@ -13,10 +13,12 @@ import {
 } from 'lucide-react';
 import type { AuthUser } from '../types';
 import {
-  signInWithGoogleRedirect,
+  signInWithGoogle,
   handleGoogleRedirectResult,
   recordLoginAuditLog,
   isFirebaseConfigured,
+  auth,
+  onAuthStateChanged,
 } from '../firebase';
 import { api } from '../api';
 
@@ -40,28 +42,66 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   const [showPin, setShowPin] = useState(false);
   const [pinNotice, setPinNotice] = useState<string | null>(null);
 
-  // Check for Google OAuth Redirect response on page load
+  // Check for Google OAuth Redirect response or persistent auth state on page load
   useEffect(() => {
     let active = true;
-    const processRedirect = async () => {
-      try {
-        const result = await handleGoogleRedirectResult();
+
+    if (!auth) {
+      setRedirectChecking(false);
+      return;
+    }
+
+    // 1. Process getRedirectResult if returning from an OAuth redirect
+    handleGoogleRedirectResult()
+      .then((result) => {
         if (result && active) {
           setPendingUser(result.user);
           setStep('vault_pin');
         }
-      } catch (err: any) {
+      })
+      .catch((err: any) => {
         if (active) {
-          console.warn('Redirect auth handler:', err);
-          setErrorMsg(err.message || 'Google Redirect callback processing failed.');
+          console.warn('Redirect auth handler warning:', err);
+          if (err?.code !== 'auth/popup-closed-by-user') {
+            setErrorMsg(err.message || 'Google Redirect callback processing failed.');
+          }
         }
-      } finally {
+      })
+      .finally(() => {
         if (active) setRedirectChecking(false);
+      });
+
+    // 2. ALSO attach onAuthStateChanged listener!
+    // Catches users when Firebase restores the auth session from storage,
+    // or when the redirect/popup token completes parsing.
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!active) return;
+      if (firebaseUser) {
+        const authUser: AuthUser = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName || 'Google User',
+          photoURL: firebaseUser.photoURL,
+          isDemo: false,
+        };
+
+        try {
+          await recordLoginAuditLog(authUser, false);
+        } catch (e) {
+          console.warn('Audit record warning:', e);
+        }
+
+        if (active) {
+          setPendingUser(authUser);
+          setStep('vault_pin');
+          setRedirectChecking(false);
+        }
       }
-    };
-    processRedirect();
+    });
+
     return () => {
       active = false;
+      unsubscribe();
     };
   }, []);
 
@@ -78,11 +118,16 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
     }
 
     try {
-      // Real Google OAuth Redirect to accounts.google.com
-      await signInWithGoogleRedirect();
+      // Initiates Google OAuth with popup-first and redirect-fallback
+      const user = await signInWithGoogle();
+      if (user) {
+        setPendingUser(user);
+        setStep('vault_pin');
+      }
     } catch (err: any) {
-      console.warn('Google Redirect launch failed:', err);
-      setErrorMsg(err.message || 'Could not initiate Google OAuth redirect.');
+      console.warn('Google sign-in failed:', err);
+      setErrorMsg(err.message || 'Could not complete Google Sign-In.');
+    } finally {
       setLoading(false);
     }
   };
@@ -230,7 +275,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>{loading ? 'Redirecting to Google...' : 'Sign in with Google (OAuth Redirect)'}</span>
+                <span>{loading ? 'Signing in with Google...' : 'Sign in with Google'}</span>
               </button>
 
               {/* Divider */}
