@@ -7,7 +7,7 @@ import {
   Key,
   Search
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { generateWithGeminiFallback } from '../utils/geminiClient';
 import type { DeviceAudit, AlertItem } from '../types';
 
 interface Message {
@@ -111,10 +111,9 @@ How can I assist in fortifying this endpoint?`,
     const deviceContext = buildDeviceContext();
     const activeKey = apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
 
-    // If Gemini API Key is available, query Gemini 2.5 Flash
+    // If Gemini API Key is available, query Gemini 3
     if (activeKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey: activeKey });
         const systemInstruction = `You are SentinelGrid AI Guardian, an elite, real-time device bodyguard and cybersecurity co-pilot embedded directly into the SentinelGrid Defense endpoint security suite.
 You are live-linked to the user's local Windows workstation: ${deviceContext.hostname} (${deviceContext.os}).
 Always maintain an authoritative, highly technical yet clear cybersecurity persona.
@@ -128,15 +127,9 @@ Use the provided real device telemetry to answer accurately without hallucinatio
 [LIVE REAL-TIME DEVICE CONTEXT SNAPSHOT]
 ${JSON.stringify(deviceContext, null, 2)}`;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            systemInstruction: systemInstruction
-          }
-        });
+        const response = await generateWithGeminiFallback(activeKey, prompt, systemInstruction);
 
-        if (response.text) {
+        if (response?.text) {
           const assistantMsg: Message = {
             id: (Date.now() + 1).toString(),
             sender: 'assistant',

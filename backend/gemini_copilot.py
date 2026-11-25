@@ -121,13 +121,47 @@ def request_copilot_summon():
     return active_app_state["summon_counter"]
 
 
+def get_gemini_api_key(override_key: str = "") -> str:
+    """Resolves the Gemini API key from explicit override, environment, or local .env files."""
+    if override_key and override_key.strip():
+        return override_key.strip()
+
+    for env_name in ("GEMINI_API_KEY", "VITE_GEMINI_API_KEY"):
+        val = (os.environ.get(env_name) or "").strip()
+        if val:
+            return val
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidate_envs = [
+        os.path.join(base_dir, ".env"),
+        os.path.abspath(os.path.join(base_dir, "..", ".env")),
+        os.path.abspath(os.path.join(base_dir, "..", "frontend", ".env")),
+    ]
+    for env_path in candidate_envs:
+        if not os.path.exists(env_path):
+            continue
+        try:
+            with open(env_path, "r", encoding="utf-8") as ef:
+                for line in ef:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    if k.strip() in ("GEMINI_API_KEY", "VITE_GEMINI_API_KEY") and v.strip():
+                        return v.strip().strip('"').strip("'")
+        except Exception:
+            pass
+    return ""
+
+
 def _call_gemini_rest_for_options(
     task: str,
     api_key: str,
     context_snapshot: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """Queries Gemini 2.5 Flash REST API and asks for structured Task -> Options JSON."""
-    if not api_key or not api_key.strip():
+    """Queries Gemini 3 REST API with automatic model fallback for structured Task -> Options JSON."""
+    resolved_key = get_gemini_api_key(api_key)
+    if not resolved_key:
         return None
 
     system_prompt = (
@@ -176,30 +210,31 @@ def _call_gemini_rest_for_options(
         },
     }
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key.strip()}"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(user_payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+    for model_name in ("gemini-3.8-flash", "gemini-3-flash-preview"):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={resolved_key}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(user_payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
 
-    try:
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            raw = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            text = (
-                raw.get("candidates", [{}])[0]
-                .get("content", {})
-                .get("parts", [{}])[0]
-                .get("text", "")
-            )
-            if not text:
-                return None
-            parsed = json.loads(text)
-            if isinstance(parsed, dict) and isinstance(parsed.get("options"), list) and len(parsed["options"]) > 0:
-                return parsed
-    except Exception:
-        return None
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                raw = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                text = (
+                    raw.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+                )
+                if not text:
+                    continue
+                parsed = json.loads(text)
+                if isinstance(parsed, dict) and isinstance(parsed.get("options"), list) and len(parsed["options"]) > 0:
+                    return parsed
+        except Exception:
+            continue
     return None
 
 

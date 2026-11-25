@@ -345,9 +345,11 @@ public class GeminiOverlayService extends Service {
 
     private SentinelDeviceGuardPlugin.AndroidTaskPlan planWithOptionalGemini(String task) {
         if (!TextUtils.isEmpty(geminiApiKey)) {
-            try {
-                URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiApiKey);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            String[] models = new String[]{"gemini-3.8-flash", "gemini-3-flash-preview"};
+            for (String modelName : models) {
+                try {
+                    URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + geminiApiKey);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setConnectTimeout(6000);
@@ -396,6 +398,7 @@ public class GeminiOverlayService extends Service {
                     }
                 }
             } catch (Exception ignored) {
+            }
             }
         }
         return SentinelDeviceGuardPlugin.planAndroidTaskOptions(task);

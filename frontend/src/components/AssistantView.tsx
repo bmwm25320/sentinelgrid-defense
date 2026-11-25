@@ -9,7 +9,7 @@ import {
   CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { generateWithGeminiFallback } from '../utils/geminiClient';
 import { api } from '../api';
 import type { DeviceAudit, AlertItem, StartupItem, VulnerabilityItem, GeminiTaskOption } from '../types';
 
@@ -120,10 +120,9 @@ Your device health score is currently **${audit?.security_score || 85}/100**, an
       // Fall back to direct @google/genai or offline planner
     }
 
-    // 1. Try Gemini 2.5 Flash via @google/genai if key is available
+    // 1. Try Gemini 3 via shared client if key is available
     if (activeKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey: activeKey });
         const systemInstruction = `You are SentinelGrid AI Security Assistant—a calm, friendly, reassuring cybersecurity helper embedded into the SentinelGrid Defense suite.
 You are live-linked to the user's computer: ${deviceContext.hostname} (${deviceContext.os}).
 Rules:
@@ -138,15 +137,9 @@ Rules:
 [CURRENT LIVE DEVICE STATUS]
 ${JSON.stringify(deviceContext, null, 2)}`;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            systemInstruction: systemInstruction,
-          },
-        });
+        const response = await generateWithGeminiFallback(activeKey, prompt, systemInstruction);
 
-        if (response.text) {
+        if (response?.text) {
           const assistantMsg: Message = {
             id: (Date.now() + 1).toString(),
             sender: 'assistant',
@@ -245,7 +238,7 @@ ${JSON.stringify(deviceContext, null, 2)}`;
             <h2 className="text-sm font-semibold text-white flex items-center gap-2">
               SentinelGrid AI Assistant
               <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-medium">
-                Gemini 2.5
+                Gemini 3
               </span>
             </h2>
             <p className="text-xs text-slate-400">Personal security co-pilot for your PC</p>

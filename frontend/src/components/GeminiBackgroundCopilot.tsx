@@ -11,7 +11,7 @@ import {
   Minimize2,
   ShieldCheck,
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { generateWithGeminiFallback, getActiveGeminiKey } from '../utils/geminiClient';
 import { api } from '../api';
 import type {
   GeminiContextState,
@@ -146,18 +146,14 @@ export const GeminiBackgroundCopilot: React.FC<GeminiBackgroundCopilotProps> = (
   };
 
   const clientSidePlanFallback = async (task: string): Promise<{ analysis: string; options: GeminiTaskOption[] }> => {
-    const activeKey = apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
+    const activeKey = getActiveGeminiKey(apiKey);
     if (activeKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey: activeKey });
         const prompt = `User task: "${task}". Device alerts: ${alerts.length}, Health Score: ${audit?.security_score ?? 90}/100.
 Return ONLY valid JSON:
 {"analysis":"short summary","options":[{"id":"opt_1","title":"action title","description":"what it does","impact":"SAFE|FAST|DEEP","action_type":"quick_scan|boost_ram|hardware_privacy_audit|scan_usb|navigate_tab","params":{}}]}`;
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-        });
-        const raw = (response.text || '').replace(/```json|```/g, '').trim();
+        const response = await generateWithGeminiFallback(activeKey, prompt);
+        const raw = (response?.text || '').replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.options) && parsed.options.length > 0) {
           return parsed;

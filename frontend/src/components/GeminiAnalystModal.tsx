@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, X, CheckCircle2, Copy, Key } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { generateWithGeminiFallback } from '../utils/geminiClient';
 import type { AlertItem } from '../types';
 
 interface GeminiAnalystModalProps {
@@ -138,7 +138,6 @@ SentinelGrid's multi-layered defense intercepted the anomalous execution on \`${
 
     if (keyToUse) {
       try {
-        const ai = new GoogleGenAI({ apiKey: keyToUse });
         const prompt = `You are SentinelGrid Defense's Principal AI Threat Analyst.
 Analyze the following endpoint security incident blocked by the SentinelGrid EDR agent:
 
@@ -161,12 +160,9 @@ Generate a clear, professional, cyber-forensic analysis in GitHub-flavored Markd
 4. Containment Actions Taken by SentinelGrid
 5. Actionable SOC Hardening & Remediation Playbook`;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-        });
+        const response = await generateWithGeminiFallback(keyToUse, prompt);
 
-        if (response.text) {
+        if (response?.text) {
           setAnalysisText(response.text);
           setSource('GEMINI_API');
           setLoading(false);
