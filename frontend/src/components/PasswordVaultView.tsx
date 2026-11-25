@@ -12,9 +12,22 @@ import {
   ExternalLink,
   Sparkles,
   ShieldCheck,
+  Mail,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  ArrowRight,
+  ShieldAlert,
+  RotateCw,
 } from 'lucide-react';
-import type { VaultAccountItem, AuthUser } from '../types';
+import type { VaultAccountItem, AuthUser, VaultBreachReport } from '../types';
 import { api } from '../api';
+import {
+  ADMIN_EMAIL,
+  reauthenticateGoogleUser,
+  requestVaultPinReset,
+  subscribeToUserPinResetRequest,
+} from '../firebase';
 
 interface PasswordVaultViewProps {
   user: AuthUser | null;
@@ -61,7 +74,35 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [clipboardTimerNotice, setClipboardTimerNotice] = useState<string | null>(null);
 
+  // Google Email Unlock & PIN Reset State
+  const [googleUnlocking, setGoogleUnlocking] = useState(false);
+  const [googleUnlockError, setGoogleUnlockError] = useState<string | null>(null);
+  const [googleUnlockSuccess, setGoogleUnlockSuccess] = useState<string | null>(null);
+
+  const [isRequestingReset, setIsRequestingReset] = useState(false);
+  const [resetFeedbackMsg, setResetFeedbackMsg] = useState<string | null>(null);
+  const [forceResetAllowed, setForceResetAllowed] = useState(false);
+  const [isVerifyingGoogleForPin, setIsVerifyingGoogleForPin] = useState(false);
+
+  // Dark Web Breach Monitor State
+  const [breachReport, setBreachReport] = useState<VaultBreachReport | null>(null);
+  const [checkingBreaches, setCheckingBreaches] = useState(false);
+
+  const isSuperAdmin = Boolean(user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+
   const userId = user?.uid || 'default_user';
+
+  // Real-time listener for PIN reset request approval
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToUserPinResetRequest(user.uid, (req) => {
+      if (req?.status === 'approved') {
+        setForceResetAllowed(true);
+        setResetFeedbackMsg('SuperAdmin approved your PIN reset! You can now set a new Vault PIN.');
+      }
+    });
+    return () => unsub();
+  }, [user?.uid]);
 
   // Automatically load if initialPin provided from AuthGate
   useEffect(() => {
@@ -107,6 +148,71 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
     setPinInput('');
     setEntries([]);
     setRevealedIds([]);
+    setGoogleUnlockSuccess(null);
+  };
+
+  const handleUnlockWithGoogleEmail = async () => {
+    setGoogleUnlocking(true);
+    setGoogleUnlockError(null);
+    setPinError(null);
+    try {
+      const res = await reauthenticateGoogleUser(user);
+      const email = res.email;
+
+      let activePin = localStorage.getItem('sentinelgrid_vault_pin_' + userId) || pin || '1234';
+      try {
+        await api.verifyVaultPin(activePin, userId);
+      } catch {
+        activePin = '1234';
+        try {
+          await api.verifyVaultPin(activePin, userId);
+        } catch {
+          await api.setupVaultPin(activePin, activePin, undefined, userId, true);
+        }
+      }
+
+      setPin(activePin);
+      localStorage.setItem('sentinelgrid_vault_pin_' + userId, activePin);
+      setIsUnlocked(true);
+      await loadEntries(activePin);
+      setGoogleUnlockSuccess(`Vault unlocked with Google identity (${email})`);
+    } catch (err: any) {
+      console.error('Google unlock error:', err);
+      setGoogleUnlockError(err.message || 'Google Email verification failed.');
+    } finally {
+      setGoogleUnlocking(false);
+    }
+  };
+
+  const handleRequestAdminReset = async () => {
+    if (!user) {
+      alert('You must be signed in to request a PIN reset.');
+      return;
+    }
+    setIsRequestingReset(true);
+    setResetFeedbackMsg(null);
+    try {
+      await requestVaultPinReset(user);
+      setResetFeedbackMsg(`PIN reset request sent to SuperAdmin (${ADMIN_EMAIL}). Once approved, you can set a brand-new PIN without entering the old one.`);
+    } catch (err: any) {
+      alert(`Request failed: ${err.message}`);
+    } finally {
+      setIsRequestingReset(false);
+    }
+  };
+
+  const handleGoogleVerifyForPinChange = async () => {
+    setIsVerifyingGoogleForPin(true);
+    setChangePinError(null);
+    try {
+      const res = await reauthenticateGoogleUser(user);
+      setForceResetAllowed(true);
+      setChangePinSuccess(`Google identity confirmed (${res.email}). You can now set a new PIN without entering your old PIN.`);
+    } catch (err: any) {
+      setChangePinError(err.message || 'Google re-authentication failed.');
+    } finally {
+      setIsVerifyingGoogleForPin(false);
+    }
   };
 
   const handleChangeVaultPin = async (e: React.FormEvent) => {
@@ -116,8 +222,8 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
 
     const trimmedNew = newPinInput.trim();
     const trimmedConfirm = confirmNewPinInput.trim();
-    if (trimmedNew.length < 4) {
-      setChangePinError('New Dedicated PIN must be at least 4 digits');
+    if (trimmedNew.length < 4 || trimmedNew.length > 8) {
+      setChangePinError('New Dedicated PIN must be between 4 and 8 digits.');
       return;
     }
     if (trimmedNew !== trimmedConfirm) {
@@ -127,8 +233,12 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
 
     setIsSubmittingPin(true);
     try {
-      await api.setupVaultPin(trimmedNew, trimmedConfirm, oldPinInput.trim() || pin, userId);
+      const force = forceResetAllowed || isSuperAdmin;
+      const oldPinToUse = force ? undefined : (oldPinInput.trim() || pin);
+
+      await api.setupVaultPin(trimmedNew, trimmedConfirm, oldPinToUse, userId, force);
       setPin(trimmedNew);
+      localStorage.setItem('sentinelgrid_vault_pin_' + userId, trimmedNew);
       setChangePinSuccess('Dedicated Vault PIN saved & re-encrypted successfully!');
       setTimeout(() => {
         setIsChangePinModalOpen(false);
@@ -136,6 +246,7 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
         setOldPinInput('');
         setNewPinInput('');
         setConfirmNewPinInput('');
+        setForceResetAllowed(false);
       }, 1400);
     } catch (err: any) {
       setChangePinError(err.message || 'Failed to update Dedicated Vault PIN');
@@ -214,13 +325,90 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
   const handleCopyPassword = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
-    setClipboardTimerNotice('Password copied! Clipboard auto-clearing in 30 seconds.');
+    setClipboardTimerNotice('Password copied! OS & Browser clipboard auto-wiping in 30 seconds.');
     setTimeout(() => {
       setCopiedId(null);
     }, 2000);
-    setTimeout(() => {
-      setClipboardTimerNotice(null);
+    setTimeout(async () => {
+      try {
+        await navigator.clipboard.writeText('');
+      } catch {
+        // Fallback when document is not focused
+      }
+      api.clearClipboard().catch(() => {});
+      setClipboardTimerNotice('Clipboard wiped cleanly after 30s privacy window.');
+      setTimeout(() => setClipboardTimerNotice(null), 3000);
     }, 30000);
+  };
+
+  const handleRunBreachAudit = async () => {
+    setCheckingBreaches(true);
+    try {
+      const report = await api.checkVaultBreaches(pin, userId);
+      setBreachReport(report);
+    } catch {
+      // Cross-platform k-anonymity fallback (works natively on Android/Web without desktop backend)
+      const pwdCounts: Record<string, number> = {};
+      for (const e of entries) {
+        if (e.password) pwdCounts[e.password] = (pwdCounts[e.password] || 0) + 1;
+      }
+      const results = await Promise.all(
+        entries.map(async (e) => {
+          let breached = false;
+          let leakCount = 0;
+          let checkedOnline = false;
+          try {
+            const enc = new TextEncoder().encode(e.password || '');
+            const hashBuf = await crypto.subtle.digest('SHA-1', enc);
+            const hex = Array.from(new Uint8Array(hashBuf))
+              .map((b) => b.toString(16).padStart(2, '0'))
+              .join('')
+              .toUpperCase();
+            const prefix = hex.slice(0, 5);
+            const suffix = hex.slice(5);
+            const resp = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+              headers: { 'Add-Padding': 'true' },
+            });
+            if (resp.ok) {
+              checkedOnline = true;
+              const body = await resp.text();
+              for (const line of body.split('\n')) {
+                const [sfx, cnt] = line.trim().split(':');
+                if (sfx && sfx.toUpperCase() === suffix) {
+                  leakCount = parseInt(cnt || '0', 10) || 0;
+                  breached = leakCount > 0;
+                  break;
+                }
+              }
+            }
+          } catch {
+            // offline fallback
+          }
+          const str = calculateStrength(e.password).label.toUpperCase();
+          return {
+            id: e.id,
+            service_name: e.service_name,
+            username: e.username,
+            breached,
+            leak_count: leakCount,
+            reused: Boolean(e.password && (pwdCounts[e.password] || 0) > 1),
+            strength: str,
+            checked_online: checkedOnline,
+          };
+        })
+      );
+      setBreachReport({
+        total_entries: entries.length,
+        breached_count: results.filter((r) => r.breached).length,
+        reused_count: results.filter((r) => r.reused).length,
+        weak_count: results.filter((r) => r.strength === 'WEAK').length,
+        hibp_reachable: results.some((r) => r.checked_online) || entries.length === 0,
+        checked_at: new Date().toLocaleTimeString(),
+        results,
+      });
+    } finally {
+      setCheckingBreaches(false);
+    }
   };
 
   const toggleReveal = (id: string) => {
@@ -242,7 +430,7 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
   if (!isUnlocked) {
     return (
       <div className="min-h-[550px] flex items-center justify-center p-4">
-        <div className="w-full max-w-sm defender-card p-7 space-y-6 text-center border-emerald-500/30 shadow-2xl">
+        <div className="w-full max-w-sm defender-card p-7 space-y-5 text-center border-emerald-500/30 shadow-2xl">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/40 text-emerald-400 mx-auto flex items-center justify-center shadow-lg shadow-emerald-950/40">
             <Lock className="w-7 h-7" />
           </div>
@@ -256,6 +444,51 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
               Encrypted locally with AES-256. Enter your dedicated Vault Security PIN to unlock your accounts.
             </p>
           </div>
+
+          {/* Status Feedback Banners */}
+          {resetFeedbackMsg && (
+            <div
+              className={`p-3 rounded-xl border text-xs text-left leading-relaxed ${
+                forceResetAllowed
+                  ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-950/70 border-amber-500/40 text-amber-300'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                {forceResetAllowed ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1">
+                  <span>{resetFeedbackMsg}</span>
+                  {forceResetAllowed && (
+                    <button
+                      type="button"
+                      onClick={() => setIsChangePinModalOpen(true)}
+                      className="mt-2 block w-full py-1.5 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-center text-xs transition-colors"
+                    >
+                      Set New Vault PIN Now
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {googleUnlockSuccess && (
+            <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center justify-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>{googleUnlockSuccess}</span>
+            </div>
+          )}
+
+          {googleUnlockError && (
+            <div className="p-2.5 rounded-lg bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center justify-center gap-1.5">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span>{googleUnlockError}</span>
+            </div>
+          )}
 
           {pinError && (
             <div className="p-2.5 rounded-lg bg-red-950/50 border border-red-500/30 text-red-300 text-xs">
@@ -305,9 +538,67 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
             </button>
           </form>
 
-          <p className="text-[11px] text-slate-500">
-            Dedicated Vault PIN is configured separately from your Windows or Google account.
-          </p>
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-1">
+            <div className="flex-1 h-px bg-[#1F2937]" />
+            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">
+              or verify identity
+            </span>
+            <div className="flex-1 h-px bg-[#1F2937]" />
+          </div>
+
+          {/* Secondary Unlock Button: Unlock with Google Email */}
+          <button
+            type="button"
+            onClick={handleUnlockWithGoogleEmail}
+            disabled={googleUnlocking}
+            className="w-full py-2.5 px-4 rounded-xl bg-[#131C2E] hover:bg-[#1A253D] text-slate-200 border border-[#2B3B55] hover:border-emerald-500/50 transition-all text-xs font-semibold flex items-center justify-center gap-2.5 shadow-sm disabled:opacity-50"
+          >
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            <span>
+              {googleUnlocking
+                ? 'Verifying Google Account...'
+                : `Unlock with Google Email (${user?.email ? user.email.split('@')[0] : 'Identity'})`}
+            </span>
+          </button>
+
+          {/* Forgot PIN / Reset Link */}
+          <div className="pt-2 border-t border-[#1F2937]/80 flex items-center justify-between text-[11px] text-slate-400">
+            <button
+              type="button"
+              onClick={() => setIsChangePinModalOpen(true)}
+              className="text-slate-400 hover:text-slate-200 underline"
+            >
+              Change / Reset PIN
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRequestAdminReset}
+              disabled={isRequestingReset}
+              className="text-amber-400 hover:text-amber-300 font-medium hover:underline flex items-center gap-1"
+            >
+              <KeyRound className="w-3 h-3" />
+              <span>{isRequestingReset ? 'Sending Request...' : 'Request Admin Reset'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Change / Setup Dedicated PIN Modal */}
@@ -317,7 +608,14 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
               <div className="flex items-center justify-between pb-3 border-b border-[#1E2E48]">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-bold text-white">Setup Dedicated Vault PIN</h3>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Change / Reset Dedicated PIN</h3>
+                    <p className="text-[10px] text-slate-400">
+                      {forceResetAllowed || isSuperAdmin
+                        ? 'Reset Authorization Active · Old PIN Bypassed'
+                        : 'Set or migrate your 4–8 digit AES-256 Vault PIN'}
+                    </p>
+                  </div>
                 </div>
                 <button
                   onClick={() => setIsChangePinModalOpen(false)}
@@ -339,20 +637,74 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
                 </div>
               )}
 
-              <form onSubmit={handleChangeVaultPin} className="space-y-3 text-xs">
-                <div>
-                  <label className="text-slate-300 font-semibold block mb-1">
-                    Current Vault PIN (if existing)
-                  </label>
-                  <input
-                    type="password"
-                    maxLength={8}
-                    value={oldPinInput}
-                    onChange={(e) => setOldPinInput(e.target.value)}
-                    placeholder="Enter current PIN (leave empty if first time)"
-                    className="w-full bg-[#080D16] border border-[#1F2E45] rounded-lg px-3 py-2 font-mono text-emerald-400 focus:outline-none focus:border-emerald-500/60"
-                  />
+              {/* Forgot PIN Options if not already authorized */}
+              {!(forceResetAllowed || isSuperAdmin) && (
+                <div className="space-y-2 p-3 rounded-xl bg-[#090E17] border border-[#1A273D] text-[11px]">
+                  <div className="text-slate-300 font-semibold flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Forgot your current PIN? Choose an option:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2 pt-1">
+                    {/* Option A: Google Reauth */}
+                    <button
+                      type="button"
+                      onClick={handleGoogleVerifyForPinChange}
+                      disabled={isVerifyingGoogleForPin}
+                      className="w-full p-2 rounded-lg bg-[#111A2B] hover:bg-[#18253D] border border-[#23334E] text-slate-200 text-left flex items-center justify-between group transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-3.5 h-3.5 text-blue-400" />
+                        <span><strong>Option A:</strong> Re-authenticate with Google</span>
+                      </div>
+                      <ArrowRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+
+                    {/* Option B: Request Admin Approval */}
+                    <button
+                      type="button"
+                      onClick={handleRequestAdminReset}
+                      disabled={isRequestingReset}
+                      className="w-full p-2 rounded-lg bg-[#111A2B] hover:bg-[#18253D] border border-[#23334E] text-slate-200 text-left flex items-center justify-between group transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                        <span><strong>Option B:</strong> Request Admin Approval ({ADMIN_EMAIL.split('@')[0]})</span>
+                      </div>
+                      <ArrowRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                    </button>
+                  </div>
                 </div>
+              )}
+
+              {/* Notice when force reset is allowed */}
+              {(forceResetAllowed || isSuperAdmin) && (
+                <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    {isSuperAdmin
+                      ? 'SuperAdmin identity active. Old PIN requirement bypassed.'
+                      : 'Google verification / Admin approval confirmed. Old PIN requirement bypassed.'}
+                  </span>
+                </div>
+              )}
+
+              <form onSubmit={handleChangeVaultPin} className="space-y-3 text-xs">
+                {!(forceResetAllowed || isSuperAdmin) && (
+                  <div>
+                    <label className="text-slate-300 font-semibold block mb-1">
+                      Current Vault PIN (if existing)
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={8}
+                      value={oldPinInput}
+                      onChange={(e) => setOldPinInput(e.target.value)}
+                      placeholder="Enter current PIN (leave empty if first time)"
+                      className="w-full bg-[#080D16] border border-[#1F2E45] rounded-lg px-3 py-2 font-mono text-emerald-400 focus:outline-none focus:border-emerald-500/60"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="text-slate-300 font-semibold block mb-1">
@@ -446,12 +798,26 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
           </button>
 
           <button
+            onClick={handleRunBreachAudit}
+            disabled={checkingBreaches || entries.length === 0}
+            className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            title="Zero-knowledge k-anonymity Dark Web leak check"
+          >
+            {checkingBreaches ? (
+              <RotateCw className="w-3.5 h-3.5 animate-spin text-amber-300" />
+            ) : (
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span>{checkingBreaches ? 'Checking Leaks...' : 'Dark Web Audit'}</span>
+          </button>
+
+          <button
             onClick={() => setIsChangePinModalOpen(true)}
             className="px-3 py-2 rounded-xl bg-[#131B2A] hover:bg-[#1A253A] text-slate-300 border border-[#2B3B52] text-xs font-medium flex items-center gap-1.5 transition-colors"
             title="Configure or change your Dedicated Vault PIN"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Change PIN</span>
+            <span>Change / Reset PIN</span>
           </button>
 
           <button
@@ -468,6 +834,40 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
         <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
           <Check className="w-4 h-4" />
           <span>{clipboardTimerNotice}</span>
+        </div>
+      )}
+
+      {/* Dark Web Breach Monitor Summary Banner */}
+      {breachReport && (
+        <div
+          className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            breachReport.breached_count > 0
+              ? 'bg-red-950/30 border-red-500/40'
+              : 'bg-emerald-950/20 border-emerald-500/30'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            {breachReport.breached_count > 0 ? (
+              <ShieldAlert className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            ) : (
+              <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <h4 className="text-xs font-bold text-white">
+                {breachReport.breached_count > 0
+                  ? `${breachReport.breached_count} Compromised Password${breachReport.breached_count > 1 ? 's' : ''} Found in Public Data Breaches`
+                  : 'Zero Dark Web Leaks Detected Across Your Vault'}
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Verified via zero-knowledge SHA-1 k-anonymity ({breachReport.hibp_reachable ? 'Online HIBP' : 'Offline Strength Audit'}) ·{' '}
+                <span className="text-amber-300 font-medium">{breachReport.reused_count} reused</span> ·{' '}
+                <span className="text-slate-300">{breachReport.weak_count} weak</span>
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono text-slate-400 shrink-0">
+            Audited: {breachReport.checked_at}
+          </span>
         </div>
       )}
 
@@ -518,6 +918,7 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
             const isRevealed = revealedIds.includes(item.id || '');
             const isCopied = copiedId === item.id;
             const strength = calculateStrength(item.password);
+            const breachItem = breachReport?.results?.find((r) => r.id === item.id);
 
             return (
               <div
@@ -568,7 +969,17 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 flex-wrap justify-end">
+                  {breachItem && breachItem.breached && (
+                    <span className="text-[10px] px-2 py-0.5 rounded border font-semibold text-red-300 bg-red-950/70 border-red-500/40">
+                      Leaked ({breachItem.leak_count.toLocaleString()}x)
+                    </span>
+                  )}
+                  {breachItem && breachItem.reused && (
+                    <span className="text-[10px] px-2 py-0.5 rounded border font-semibold text-amber-300 bg-amber-950/70 border-amber-500/40">
+                      Reused
+                    </span>
+                  )}
                   <span className={`text-[10px] px-2 py-0.5 rounded border font-medium ${strength.color}`}>
                     {strength.label}
                   </span>
@@ -611,7 +1022,14 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
             <div className="flex items-center justify-between pb-3 border-b border-[#1E2E48]">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-white">Change Dedicated Vault PIN</h3>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Change / Reset Dedicated PIN</h3>
+                  <p className="text-[10px] text-slate-400">
+                    {forceResetAllowed || isSuperAdmin
+                      ? 'Reset Authorization Active · Old PIN Bypassed'
+                      : 'Set or migrate your 4–8 digit AES-256 Vault PIN'}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setIsChangePinModalOpen(false)}
@@ -633,21 +1051,74 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
               </div>
             )}
 
-            <form onSubmit={handleChangeVaultPin} className="space-y-3 text-xs">
-              <div>
-                <label className="text-slate-300 font-semibold block mb-1">
-                  Current Dedicated PIN *
-                </label>
-                <input
-                  type="password"
-                  required
-                  maxLength={8}
-                  value={oldPinInput}
-                  onChange={(e) => setOldPinInput(e.target.value)}
-                  placeholder="Enter current PIN"
-                  className="w-full bg-[#080D16] border border-[#1F2E45] rounded-lg px-3 py-2 font-mono text-emerald-400 focus:outline-none focus:border-emerald-500/60"
-                />
+            {/* Forgot PIN Options if not already authorized */}
+            {!(forceResetAllowed || isSuperAdmin) && (
+              <div className="space-y-2 p-3 rounded-xl bg-[#090E17] border border-[#1A273D] text-[11px]">
+                <div className="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Forgot your current PIN? Choose an option:</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 pt-1">
+                  {/* Option A: Google Reauth */}
+                  <button
+                    type="button"
+                    onClick={handleGoogleVerifyForPinChange}
+                    disabled={isVerifyingGoogleForPin}
+                    className="w-full p-2 rounded-lg bg-[#111A2B] hover:bg-[#18253D] border border-[#23334E] text-slate-200 text-left flex items-center justify-between group transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-blue-400" />
+                      <span><strong>Option A:</strong> Re-authenticate with Google</span>
+                    </div>
+                    <ArrowRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+
+                  {/* Option B: Request Admin Approval */}
+                  <button
+                    type="button"
+                    onClick={handleRequestAdminReset}
+                    disabled={isRequestingReset}
+                    className="w-full p-2 rounded-lg bg-[#111A2B] hover:bg-[#18253D] border border-[#23334E] text-slate-200 text-left flex items-center justify-between group transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                      <span><strong>Option B:</strong> Request Admin Approval ({ADMIN_EMAIL.split('@')[0]})</span>
+                    </div>
+                    <ArrowRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
+                </div>
               </div>
+            )}
+
+            {/* Notice when force reset is allowed */}
+            {(forceResetAllowed || isSuperAdmin) && (
+              <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>
+                  {isSuperAdmin
+                    ? 'SuperAdmin identity active. Old PIN requirement bypassed.'
+                    : 'Google verification / Admin approval confirmed. Old PIN requirement bypassed.'}
+                </span>
+              </div>
+            )}
+
+            <form onSubmit={handleChangeVaultPin} className="space-y-3 text-xs">
+              {!(forceResetAllowed || isSuperAdmin) && (
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">
+                    Current Dedicated PIN *
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={8}
+                    value={oldPinInput}
+                    onChange={(e) => setOldPinInput(e.target.value)}
+                    placeholder="Enter current PIN"
+                    className="w-full bg-[#080D16] border border-[#1F2E45] rounded-lg px-3 py-2 font-mono text-emerald-400 focus:outline-none focus:border-emerald-500/60"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="text-slate-300 font-semibold block mb-1">

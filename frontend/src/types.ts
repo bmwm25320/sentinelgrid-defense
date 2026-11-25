@@ -333,4 +333,102 @@ export interface AuditLogsResponse {
   admin_authorized: boolean;
 }
 
+export interface VaultPinResetRequest {
+  id?: string;
+  uid: string;
+  email: string;
+  full_name?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
+}
+
+export interface VaultBreachEntryResult {
+  id?: string;
+  service_name: string;
+  username: string;
+  breached: boolean;
+  leak_count: number;
+  reused: boolean;
+  strength: 'WEAK' | 'GOOD' | 'STRONG' | string;
+  checked_online: boolean;
+}
+
+export interface VaultBreachReport {
+  total_entries: number;
+  breached_count: number;
+  reused_count: number;
+  weak_count: number;
+  hibp_reachable: boolean;
+  checked_at: string;
+  results: VaultBreachEntryResult[];
+}
+
+export interface BlockedIpItem {
+  ip: string;
+  reason: string;
+  rule_name: string;
+  firewall_enforced: boolean;
+  enforcement_note: string;
+  blocked_at: string;
+}
+
+export interface ArpMitmStatus {
+  status: 'SAFE' | 'ALERT' | 'UNKNOWN' | string;
+  anomalies: {
+    interface: string;
+    mac_address: string;
+    conflicting_ips: string[];
+    description: string;
+  }[];
+  entries_checked: number;
+  checked_at?: string;
+}
+
+export interface HardwarePrivacyApp {
+  app: string;
+  path: string;
+  active: boolean;
+}
+
+export interface HardwarePrivacyStatus {
+  webcam_in_use: boolean;
+  webcam_active_apps: HardwarePrivacyApp[];
+  recent_webcam_apps: HardwarePrivacyApp[];
+  microphone_in_use: boolean;
+  microphone_active_apps: HardwarePrivacyApp[];
+  recent_microphone_apps: HardwarePrivacyApp[];
+  guard_status: string;
+  checked_at: string;
+}
+
+export interface NetworkShieldStatus {
+  blocked_ips: BlockedIpItem[];
+  arp_mitm: ArpMitmStatus;
+  hardware_privacy: HardwarePrivacyStatus;
+}
+
+export interface UsbDriveItem {
+  mountpoint: string;
+  fstype: string;
+  total_gb: number;
+}
+
+export interface UsbScanResult {
+  target_path: string;
+  files_scanned: number;
+  threats_found: number;
+  threats: AlertItem[];
+  status: string;
+  scanned_at: string;
+}
+
+export interface UsbShieldStatus {
+  status: string;
+  connected_drives: UsbDriveItem[];
+  last_scan: UsbScanResult | null;
+}
+
+
 

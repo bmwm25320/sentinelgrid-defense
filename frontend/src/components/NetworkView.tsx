@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Wifi,
   ShieldCheck,
@@ -9,9 +9,26 @@ import {
   Search,
   AlertTriangle,
   XCircle,
+  Ban,
+  Camera,
+  Mic,
+  Smartphone,
+  RotateCw,
+  Trash2,
 } from 'lucide-react';
-import type { DeviceAudit, ShieldConfig, NetworkConnectionItem, UrlCheckResult } from '../types';
+import type {
+  DeviceAudit,
+  ShieldConfig,
+  NetworkConnectionItem,
+  UrlCheckResult,
+  NetworkShieldStatus,
+} from '../types';
 import { api } from '../api';
+import {
+  SentinelDeviceGuard,
+  isAndroidNativeApp,
+  type AndroidWifiStatus,
+} from '../plugins/sentinelDeviceGuard';
 
 interface NetworkViewProps {
   audit: DeviceAudit | null;
@@ -28,6 +45,77 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
   const [urlInput, setUrlInput] = useState('');
   const [urlChecking, setUrlChecking] = useState(false);
   const [urlResult, setUrlResult] = useState<UrlCheckResult | null>(null);
+  const [shieldStatus, setShieldStatus] = useState<NetworkShieldStatus | null>(null);
+  const [androidWifi, setAndroidWifi] = useState<AndroidWifiStatus | null>(null);
+  const [blockingIp, setBlockingIp] = useState<string | null>(null);
+  const [manualIpInput, setManualIpInput] = useState('');
+  const [refreshingShield, setRefreshingShield] = useState(false);
+
+  const loadNetworkShield = async () => {
+    setRefreshingShield(true);
+    try {
+      const data = await api.getNetworkShieldStatus();
+      setShieldStatus(data);
+    } catch {
+      // Standalone Android or offline mode
+    }
+    if (isAndroidNativeApp()) {
+      try {
+        const wifiRes = await SentinelDeviceGuard.inspectWifiSecurity();
+        setAndroidWifi(wifiRes);
+      } catch {
+        // Ignore if native plugin unavailable
+      }
+    }
+    setRefreshingShield(false);
+  };
+
+  useEffect(() => {
+    loadNetworkShield();
+  }, []);
+
+  const handleBlockIp = async (ip: string, reason?: string) => {
+    if (!ip.trim()) return;
+    setBlockingIp(ip.trim());
+    try {
+      const res = await api.blockNetworkIp(ip.trim(), reason);
+      setShieldStatus((prev) =>
+        prev
+          ? { ...prev, blocked_ips: res.blocked_ips }
+          : {
+              blocked_ips: res.blocked_ips,
+              arp_mitm: { status: 'SAFE', anomalies: [], entries_checked: 0 },
+              hardware_privacy: {
+                webcam_in_use: false,
+                webcam_active_apps: [],
+                recent_webcam_apps: [],
+                microphone_in_use: false,
+                microphone_active_apps: [],
+                recent_microphone_apps: [],
+                guard_status: 'ACTIVE',
+                checked_at: '',
+              },
+            }
+      );
+      setManualIpInput('');
+    } catch (err: any) {
+      alert(`Firewall block error: ${err.message}`);
+    } finally {
+      setBlockingIp(null);
+    }
+  };
+
+  const handleUnblockIp = async (ip: string) => {
+    setBlockingIp(ip);
+    try {
+      const res = await api.unblockNetworkIp(ip);
+      setShieldStatus((prev) => (prev ? { ...prev, blocked_ips: res.blocked_ips } : null));
+    } catch (err: any) {
+      alert(`Unblock failed: ${err.message}`);
+    } finally {
+      setBlockingIp(null);
+    }
+  };
 
   const handleCheckUrl = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -36,8 +124,26 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
     try {
       const res = await api.checkUrl(urlInput.trim());
       setUrlResult(res);
-    } catch (err: any) {
-      alert(`Link check failed: ${err.message}`);
+    } catch {
+      try {
+        const nativeRes = await SentinelDeviceGuard.checkUrlSafety({ url: urlInput.trim() });
+        setUrlResult({
+          url: nativeRes.url,
+          domain: nativeRes.domain,
+          status: nativeRes.status,
+          risk_score: nativeRes.risk_score,
+          verdict_title:
+            nativeRes.status === 'DANGEROUS'
+              ? 'Warning: Malicious or Unsafe Link'
+              : nativeRes.status === 'SUSPICIOUS'
+              ? 'Caution: Suspicious Link'
+              : 'Link Appears Safe',
+          explanation: 'Evaluated locally by SentinelGrid On-Device Phishing Shield.',
+          reasons: nativeRes.reasons || [],
+        });
+      } catch (err: any) {
+        alert(`Link check failed: ${err.message}`);
+      }
     } finally {
       setUrlChecking(false);
     }
@@ -126,6 +232,80 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             Protected
           </div>
           <p className="text-[11px] text-slate-400 mt-1">Windows Firewall active and blocking probes</p>
+        </div>
+      </div>
+
+      {/* Hardware Privacy & ARP Spoofing Guard Panel */}
+      <div className="defender-card p-5 space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-xs font-semibold text-white">Hardware Privacy &amp; MITM Intrusion Shield</h3>
+          </div>
+          <button
+            onClick={loadNetworkShield}
+            disabled={refreshingShield}
+            className="text-[11px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+          >
+            <RotateCw className={`w-3 h-3 ${refreshingShield ? 'animate-spin' : ''}`} />
+            <span>Refresh Live State</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Webcam Guard */}
+          <div className={`p-3.5 rounded-xl border ${shieldStatus?.hardware_privacy?.webcam_in_use ? 'bg-amber-950/20 border-amber-500/40' : 'bg-[#0D121D] border-[#1F2937]'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                <Camera className={`w-4 h-4 ${shieldStatus?.hardware_privacy?.webcam_in_use ? 'text-amber-400' : 'text-emerald-400'}`} />
+                <span>Webcam Guard</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${shieldStatus?.hardware_privacy?.webcam_in_use ? 'bg-amber-950 text-amber-300 border border-amber-500/40' : 'bg-emerald-950 text-emerald-400 border border-emerald-500/30'}`}>
+                {shieldStatus?.hardware_privacy?.webcam_in_use ? 'IN USE' : 'LOCKED SAFE'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {shieldStatus?.hardware_privacy?.webcam_in_use
+                ? `Active: ${shieldStatus.hardware_privacy.webcam_active_apps.map(a => a.app).join(', ')}`
+                : 'No unauthorized camera hooks running'}
+            </p>
+          </div>
+
+          {/* Microphone Guard */}
+          <div className={`p-3.5 rounded-xl border ${shieldStatus?.hardware_privacy?.microphone_in_use ? 'bg-amber-950/20 border-amber-500/40' : 'bg-[#0D121D] border-[#1F2937]'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                <Mic className={`w-4 h-4 ${shieldStatus?.hardware_privacy?.microphone_in_use ? 'text-amber-400' : 'text-emerald-400'}`} />
+                <span>Microphone Shield</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${shieldStatus?.hardware_privacy?.microphone_in_use ? 'bg-amber-950 text-amber-300 border border-amber-500/40' : 'bg-emerald-950 text-emerald-400 border border-emerald-500/30'}`}>
+                {shieldStatus?.hardware_privacy?.microphone_in_use ? 'IN USE' : 'ARMED'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {shieldStatus?.hardware_privacy?.microphone_in_use
+                ? `Active: ${shieldStatus.hardware_privacy.microphone_active_apps.map(a => a.app).join(', ')}`
+                : 'No background audio eavesdropping detected'}
+            </p>
+          </div>
+
+          {/* ARP MITM / Android Wi-Fi Guard */}
+          <div className={`p-3.5 rounded-xl border ${shieldStatus?.arp_mitm?.status === 'ALERT' || androidWifi?.captivePortalDetected ? 'bg-red-950/20 border-red-500/40' : 'bg-[#0D121D] border-[#1F2937]'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                {androidWifi ? <Smartphone className="w-4 h-4 text-emerald-400" /> : <Wifi className="w-4 h-4 text-emerald-400" />}
+                <span>{androidWifi ? 'Android Wi-Fi Shield' : 'ARP Spoofing Guard'}</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${shieldStatus?.arp_mitm?.status === 'ALERT' || androidWifi?.captivePortalDetected ? 'bg-red-950 text-red-300 border border-red-500/40' : 'bg-emerald-950 text-emerald-400 border border-emerald-500/30'}`}>
+                {androidWifi ? androidWifi.transport : (shieldStatus?.arp_mitm?.status === 'ALERT' ? 'MITM ALERT' : 'CLEAN')}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {androidWifi
+                ? androidWifi.advice
+                : `${shieldStatus?.arp_mitm?.entries_checked ?? 0} ARP gateway entries verified without MAC spoofing`}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -321,18 +501,89 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
                     Server: {conn.remote_ip}
                   </span>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 font-medium">
                     Verified Safe
                   </span>
+                  {conn.remote_ip && conn.remote_ip !== '127.0.0.1' && conn.remote_ip !== '::1' && (
+                    <button
+                      onClick={() => handleBlockIp(conn.remote_ip, `Blocked outbound connection from ${conn.process || 'App'}`)}
+                      disabled={blockingIp === conn.remote_ip}
+                      className="px-2 py-1 rounded bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[10px] font-semibold flex items-center gap-1 transition-colors"
+                      title="Block this remote IP via Active Firewall"
+                    >
+                      <Ban className="w-3 h-3" />
+                      <span>{blockingIp === conn.remote_ip ? '...' : 'Block IP'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))
           )}
         </div>
+      </div>
+
+      {/* Active Firewall IP Blocklist */}
+      <div className="defender-card p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1F2937]">
+          <div>
+            <h3 className="text-xs font-semibold text-white">Active Firewall IP Blocklist</h3>
+            <p className="text-xs text-slate-400">Block malicious or suspicious C2 IP addresses at the OS Firewall layer</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={manualIpInput}
+              onChange={(e) => setManualIpInput(e.target.value)}
+              placeholder="e.g. 185.220.101.5"
+              className="bg-[#0D121D] border border-[#1F2937] rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-red-500/50 w-44"
+            />
+            <button
+              onClick={() => handleBlockIp(manualIpInput, 'Manual Operator Firewall Block')}
+              disabled={!manualIpInput.trim() || Boolean(blockingIp)}
+              className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-xs font-semibold flex items-center gap-1 disabled:opacity-50"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              <span>Block IP</span>
+            </button>
+          </div>
+        </div>
+
+        {(shieldStatus?.blocked_ips?.length ?? 0) === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-3">
+            No custom blocked IPs yet. Click "Block IP" on any suspicious connection above or add one manually.
+          </p>
+        ) : (
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {shieldStatus?.blocked_ips.map((item) => (
+              <div
+                key={item.ip}
+                className="p-2.5 rounded-lg bg-[#0D121D] border border-red-500/30 flex items-center justify-between text-xs"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-red-300">{item.ip}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-500/30">
+                      {item.firewall_enforced ? 'Windows Firewall Enforced' : 'Software Shield Active'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{item.reason} · {item.blocked_at}</p>
+                </div>
+                <button
+                  onClick={() => handleUnblockIp(item.ip)}
+                  disabled={blockingIp === item.ip}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                  title="Remove Firewall Block"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

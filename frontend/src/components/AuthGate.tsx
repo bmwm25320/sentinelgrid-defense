@@ -40,7 +40,12 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
   const [pendingUser, setPendingUser] = useState<AuthUser | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [redirectChecking, setRedirectChecking] = useState(true);
+  const isRedirectPath = typeof window !== 'undefined' && (
+    window.location.search.includes('apiKey') ||
+    window.location.search.includes('mode') ||
+    window.location.hash.includes('access_token')
+  );
+  const [redirectChecking, setRedirectChecking] = useState(isRedirectPath);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Vault PIN state
@@ -112,7 +117,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       });
 
     // 2. Attach onAuthStateChanged listener to catch sessions restored from storage or popup completion
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (!active) return;
       if (firebaseUser) {
         const authUser: AuthUser = {
@@ -123,11 +128,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
           isDemo: false,
         };
 
-        try {
-          await recordLoginAuditLog(authUser, false);
-        } catch (e) {
+        recordLoginAuditLog(authUser, false).catch((e) => {
           console.warn('Audit record warning:', e);
-        }
+        });
 
         if (active) {
           completeLogin(authUser);
@@ -193,11 +196,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
             isDemo: false,
           };
 
-          try {
-            await recordLoginAuditLog(authUser, isNewUser, 'Android Mobile');
-          } catch (auditErr) {
+          recordLoginAuditLog(authUser, isNewUser, 'Android Mobile').catch((auditErr) => {
             console.warn('Audit record warning:', auditErr);
-          }
+          });
 
           completeLogin(authUser);
         }
@@ -219,7 +220,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
     // Case 2: Web Browser & Windows Desktop App
     // Calls signInWithPopup directly inside user gesture onClick handler
     signInWithPopup(auth, googleProvider)
-      .then(async (cred) => {
+      .then((cred) => {
         if (cred && cred.user) {
           const u = cred.user;
           const additionalInfo = getAdditionalUserInfo ? getAdditionalUserInfo(cred) : null;
@@ -233,11 +234,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
             isDemo: false,
           };
 
-          try {
-            await recordLoginAuditLog(authUser, isNewUser);
-          } catch (auditErr) {
+          recordLoginAuditLog(authUser, isNewUser).catch((auditErr) => {
             console.warn('Audit record warning:', auditErr);
-          }
+          });
 
           completeLogin(authUser);
         }
@@ -265,8 +264,31 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
       });
   };
 
+  // SuperAdmin Direct Access for bmwm25320@gmail.com
+  const handleAdminSignIn = () => {
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const adminUser: AuthUser = {
+        uid: 'sg_superadmin_bmwm25320',
+        email: 'bmwm25320@gmail.com',
+        displayName: 'Sumit Shewale (Lead SecOps Admin)',
+        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+        isDemo: false,
+      };
+      recordLoginAuditLog(adminUser, false).catch((auditErr) => {
+        console.warn('Audit record warning:', auditErr);
+      });
+      completeLogin(adminUser, '1234');
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Admin sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Demo Security Operator Sign-In
-  const handleDemoSignIn = async () => {
+  const handleDemoSignIn = () => {
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -277,10 +299,12 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
         photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
         isDemo: true,
       };
-      await recordLoginAuditLog(demoUser, false);
+      recordLoginAuditLog(demoUser, false).catch((auditErr) => {
+        console.warn('Audit record warning:', auditErr);
+      });
       completeLogin(demoUser, '1234');
     } catch (e: any) {
-      setErrorMsg(e.message);
+      setErrorMsg(e.message || 'Demo sign-in failed.');
     } finally {
       setLoading(false);
     }
@@ -431,6 +455,20 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onLoginSuccess }) => {
                   <span>Standard User Demo Sign-In</span>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+
+              {/* SuperAdmin Access Button */}
+              <button
+                type="button"
+                onClick={handleAdminSignIn}
+                disabled={loading}
+                className="w-full flex items-center justify-between py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-950/60 to-cyan-950/60 hover:from-emerald-900/70 hover:to-cyan-900/70 text-emerald-300 hover:text-white border border-emerald-500/40 transition-all text-xs font-medium group disabled:opacity-50 shadow-md"
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-emerald-400" />
+                  <span>SuperAdmin Access (bmwm25320@gmail.com)</span>
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
               </button>
             </div>
 

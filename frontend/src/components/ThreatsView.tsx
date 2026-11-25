@@ -15,11 +15,19 @@ import {
   FolderCheck,
   Laptop,
   ShieldCheck,
+  HardDrive,
+  Smartphone,
+  ShieldAlert,
 } from 'lucide-react';
-import type { ShieldConfig, AlertItem, QuarantineItem, SmartScanState } from '../types';
+import type { ShieldConfig, AlertItem, QuarantineItem, SmartScanState, UsbShieldStatus } from '../types';
 import { api } from '../api';
 import { SafeDemoModal } from './SafeDemoModal';
 import { FastLaptopScanModal } from './FastLaptopScanModal';
+import {
+  SentinelDeviceGuard,
+  isAndroidNativeApp,
+  type AndroidAppScanResult,
+} from '../plugins/sentinelDeviceGuard';
 
 interface ThreatsViewProps {
   config: ShieldConfig;
@@ -60,9 +68,60 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
   const [newExclusionPath, setNewExclusionPath] = useState('');
   const [loadingExclusions, setLoadingExclusions] = useState(false);
 
+  // USB Auto-Shield & Native Android APK Scanner State
+  const [usbStatus, setUsbStatus] = useState<UsbShieldStatus | null>(null);
+  const [usbScanning, setUsbScanning] = useState(false);
+  const [usbScanMsg, setUsbScanMsg] = useState<string | null>(null);
+  const [androidScanResult, setAndroidScanResult] = useState<AndroidAppScanResult | null>(null);
+  const [androidScanning, setAndroidScanning] = useState(false);
+  const isAndroidApp = isAndroidNativeApp();
+
   useEffect(() => {
     loadExclusionsList();
+    loadUsbShieldStatus();
   }, []);
+
+  const loadUsbShieldStatus = async () => {
+    try {
+      const res = await api.getUsbStatus();
+      setUsbStatus(res);
+    } catch {
+      // Standalone Android or offline mode
+    }
+  };
+
+  const handleRunUsbScan = async () => {
+    setUsbScanning(true);
+    setUsbScanMsg(null);
+    try {
+      const res = await api.runUsbScan();
+      if (res.status === 'no_usb_detected') {
+        setUsbScanMsg(res.message || 'No removable USB drives connected. Auto-Shield remains armed.');
+      } else {
+        const totalFiles = res.results.reduce((acc, r) => acc + r.files_scanned, 0);
+        const totalThreats = res.results.reduce((acc, r) => acc + r.threats_found, 0);
+        setUsbScanMsg(`Scanned ${totalFiles} files across ${res.results.length} USB drive(s). Threats blocked: ${totalThreats}.`);
+        onDataUpdated();
+      }
+      await loadUsbShieldStatus();
+    } catch (e: any) {
+      setUsbScanMsg(`USB scan failed: ${e.message}`);
+    } finally {
+      setUsbScanning(false);
+    }
+  };
+
+  const handleAndroidAppScan = async () => {
+    setAndroidScanning(true);
+    try {
+      const res = await SentinelDeviceGuard.scanInstalledApps();
+      setAndroidScanResult(res);
+    } catch (e: any) {
+      alert(`Android native scan requires installed Android APK: ${e.message}`);
+    } finally {
+      setAndroidScanning(false);
+    }
+  };
 
   const loadExclusionsList = async () => {
     try {
@@ -568,6 +627,144 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             })}
           </div>
         )}
+      </div>
+
+      {/* Section 3B: Cross-Platform USB Auto-Shield & Android APK Guard */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* USB Removable Drive Auto-Shield */}
+        <div className="defender-card p-5 space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <HardDrive className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-white">USB &amp; Removable Drive Auto-Shield</h3>
+                <p className="text-[11px] text-slate-400">Auto-sweeps flash drives for autorun worms &amp; droppers</p>
+              </div>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-bold">
+              {usbStatus?.status || 'ARMED'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-slate-300 bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3">
+            <div>
+              <div className="font-medium text-white">
+                {(usbStatus?.connected_drives?.length ?? 0) > 0
+                  ? `${usbStatus?.connected_drives.length} USB Drive(s) Connected`
+                  : 'No USB Drives Inserted'}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {(usbStatus?.connected_drives?.length ?? 0) > 0
+                  ? usbStatus?.connected_drives.map((d) => `${d.mountpoint} (${d.total_gb} GB)`).join(', ')
+                  : 'Watcher triggers automatically on drive mount'}
+              </div>
+            </div>
+            <button
+              onClick={handleRunUsbScan}
+              disabled={usbScanning}
+              className="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${usbScanning ? 'animate-spin' : ''}`} />
+              <span>{usbScanning ? 'Scanning...' : 'Scan USB'}</span>
+            </button>
+          </div>
+
+          {usbScanMsg && (
+            <div className="p-2.5 rounded-lg bg-[#0D121D] border border-emerald-500/30 text-[11px] text-emerald-300">
+              {usbScanMsg}
+            </div>
+          )}
+        </div>
+
+        {/* Native Android App & Stalkerware Scanner */}
+        <div className="defender-card p-5 space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <Smartphone className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-white">Android APK &amp; Stalkerware Guard</h3>
+                <p className="text-[11px] text-slate-400">Audits sideloaded APKs, overlay trojans &amp; hidden spyware</p>
+              </div>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/30 font-bold">
+              {isAndroidApp ? 'NATIVE ACTIVE' : 'ANDROID ENGINE'}
+            </span>
+          </div>
+
+          {isAndroidApp ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3 text-xs">
+                <div>
+                  <div className="font-medium text-white">On-Device PackageManager Scanner</div>
+                  <div className="text-[11px] text-slate-400">
+                    {androidScanResult
+                      ? `Score: ${androidScanResult.securityScore}/100 · ${androidScanResult.userAppsCount} apps · ${androidScanResult.sideloadedCount} sideloaded`
+                      : 'Scan installed Android apps for toxic permissions & stalkerware'}
+                  </div>
+                </div>
+                <button
+                  onClick={handleAndroidAppScan}
+                  disabled={androidScanning}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${androidScanning ? 'animate-spin' : ''}`} />
+                  <span>{androidScanning ? 'Auditing...' : 'Scan Apps'}</span>
+                </button>
+              </div>
+
+              {androidScanResult && (
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {androidScanResult.apps.slice(0, 12).map((app) => (
+                    <div
+                      key={app.packageName}
+                      className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+                        app.riskLevel === 'CRITICAL' || app.riskLevel === 'HIGH'
+                          ? 'bg-red-950/30 border-red-500/40'
+                          : app.riskLevel === 'MEDIUM'
+                          ? 'bg-amber-950/20 border-amber-500/30'
+                          : 'bg-[#0B0F17] border-[#1F2937]'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                          {(app.riskLevel === 'CRITICAL' || app.riskLevel === 'HIGH') && (
+                            <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                          )}
+                          <span>{app.appName}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono truncate">{app.packageName}</div>
+                      </div>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded font-bold shrink-0 ${
+                          app.riskLevel === 'CRITICAL' || app.riskLevel === 'HIGH'
+                            ? 'bg-red-950 text-red-300 border border-red-500/40'
+                            : app.riskLevel === 'MEDIUM'
+                            ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                            : 'bg-emerald-950 text-emerald-400 border border-emerald-500/30'
+                        }`}
+                      >
+                        {app.riskLevel}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3 text-xs space-y-1.5">
+              <div className="font-medium text-slate-200">
+                Native Capacitor <code className="text-cyan-400">SentinelDeviceGuard</code> Plugin Built Into APK
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                When launched on Android, SentinelGrid audits installed APKs for unknown installers, hidden stalkerware services, Banking Trojan overlay/SMS combinations, and public Wi-Fi captive portals.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Section 4: Allowed Folders & Exclusions */}

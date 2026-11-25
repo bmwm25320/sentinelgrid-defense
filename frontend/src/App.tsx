@@ -8,6 +8,7 @@ import { AssistantView } from './components/AssistantView';
 import { PasswordVaultView } from './components/PasswordVaultView';
 import { AuthGate } from './components/AuthGate';
 import { AdminAuditView } from './components/AdminAuditView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { MobileApkModal } from './components/MobileApkModal';
 import { SettingsModal } from './components/SettingsModal';
 import { api } from './api';
@@ -70,18 +71,14 @@ export default function App() {
 
   const fetchAllData = useCallback(async () => {
     try {
-      const [tData, aData, qData, cData, auditData] = await Promise.all([
+      const [tData, aData, qData] = await Promise.all([
         api.getTelemetry(),
         api.getAlerts(),
         api.getQuarantine(),
-        api.getConfig(),
-        api.getDeviceAudit(),
       ]);
       setTelemetry(tData);
       setAlerts(aData);
       setQuarantine(qData);
-      setConfig(cData);
-      setAudit(auditData);
       setConnected(true);
     } catch (err) {
       console.warn('Backend polling error:', err);
@@ -89,11 +86,30 @@ export default function App() {
     }
   }, []);
 
+  const fetchAuditAndConfig = useCallback(async () => {
+    try {
+      const [cData, auditData] = await Promise.all([
+        api.getConfig(),
+        api.getDeviceAudit(),
+      ]);
+      setConfig(cData);
+      setAudit(auditData);
+    } catch (err) {
+      console.warn('Config / Audit fetch error:', err);
+    }
+  }, []);
+
   useEffect(() => {
+    if (!currentUser) return;
     fetchAllData();
-    const interval = setInterval(fetchAllData, 2500);
-    return () => clearInterval(interval);
-  }, [fetchAllData]);
+    fetchAuditAndConfig();
+    const pollInterval = setInterval(fetchAllData, 3000);
+    const auditInterval = setInterval(fetchAuditAndConfig, 30000);
+    return () => {
+      clearInterval(pollInterval);
+      clearInterval(auditInterval);
+    };
+  }, [currentUser, fetchAllData, fetchAuditAndConfig]);
 
   const handleStartQuickScan = async () => {
     setIsScanning(true);
@@ -330,7 +346,9 @@ export default function App() {
             )}
 
             {activeTab === 'admin_audit' && (
-              <AdminAuditView user={currentUser} />
+              <ErrorBoundary fallbackTitle="Admin Audit Center Notice" onReset={() => setActiveTab('dashboard')}>
+                <AdminAuditView user={currentUser} />
+              </ErrorBoundary>
             )}
           </div>
         </main>

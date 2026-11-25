@@ -16,11 +16,12 @@ import {
   Copy,
   Check,
   UserPlus,
-  LogIn
+  LogIn,
+  Clock
 } from 'lucide-react';
-import type { AuthUser, LoginAuditLog, AuditStats } from '../types';
+import type { AuthUser, LoginAuditLog, AuditStats, VaultPinResetRequest } from '../types';
 import { api } from '../api';
-import { fetchAuditLogs, ADMIN_EMAIL } from '../firebase';
+import { fetchAuditLogs, ADMIN_EMAIL, subscribeToAllPinResetRequests, approveVaultPinReset } from '../firebase';
 
 interface AdminAuditViewProps {
   user: AuthUser | null;
@@ -42,6 +43,11 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
   // Copy feedback
   const [copiedUid, setCopiedUid] = useState<string | null>(null);
 
+  // Vault PIN Reset Requests State
+  const [pinRequests, setPinRequests] = useState<VaultPinResetRequest[]>([]);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveSuccessMsg, setApproveSuccessMsg] = useState<string | null>(null);
+
   const loadAuditData = useCallback(async () => {
     if (!isAdmin || !user?.email) return;
     setLoading(true);
@@ -56,19 +62,19 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
         setStats(statsData);
       } else {
         // Compute local stats from logs
-        const unique = new Set(cloudLogs.map(l => l.email.toLowerCase())).size;
+        const unique = new Set((cloudLogs || []).map(l => (l?.email || '').toLowerCase())).size;
         const todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-        const loginsToday = cloudLogs.filter(l => l.login_date.includes(todayStr)).length;
-        const win = cloudLogs.filter(l => l.platform.includes('Windows')).length;
-        const droid = cloudLogs.filter(l => l.platform.includes('Android')).length;
-        const web = cloudLogs.filter(l => l.platform.includes('Web')).length;
-        const signups = cloudLogs.filter(l => l.event_type === 'NEW_ACCOUNT_SIGNUP').length;
+        const loginsToday = (cloudLogs || []).filter(l => (l?.login_date || '').includes(todayStr)).length;
+        const win = (cloudLogs || []).filter(l => (l?.platform || '').includes('Windows')).length;
+        const droid = (cloudLogs || []).filter(l => (l?.platform || '').includes('Android')).length;
+        const web = (cloudLogs || []).filter(l => (l?.platform || '').includes('Web')).length;
+        const signups = (cloudLogs || []).filter(l => l?.event_type === 'NEW_ACCOUNT_SIGNUP').length;
         setStats({
           total_users: unique,
-          total_logins: cloudLogs.length,
+          total_logins: (cloudLogs || []).length,
           logins_today: loginsToday,
           platforms: { windows: win, android: droid, web },
-          event_types: { signups, logins: cloudLogs.length - signups },
+          event_types: { signups, logins: (cloudLogs || []).length - signups },
         });
       }
     } catch (err: any) {
@@ -85,22 +91,48 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
     }
   }, [isAdmin, loadAuditData]);
 
+  // Subscribe to real-time Vault PIN reset requests
+  useEffect(() => {
+    if (!isAdmin) return;
+    const unsub = subscribeToAllPinResetRequests((requests) => {
+      setPinRequests(requests);
+    });
+    return () => unsub();
+  }, [isAdmin]);
+
+  const handleApproveReset = async (req: VaultPinResetRequest) => {
+    const targetId = req.id || req.uid;
+    setApprovingId(targetId);
+    setApproveSuccessMsg(null);
+    try {
+      await approveVaultPinReset(targetId, req.uid);
+      setApproveSuccessMsg(`Approved PIN reset for ${req.email}`);
+      setTimeout(() => setApproveSuccessMsg(null), 4000);
+    } catch (err: any) {
+      alert(`Approval failed: ${err.message}`);
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
   // Filtered logs
   const filteredLogs = useMemo(() => {
-    return logs.filter(log => {
+    return (logs || []).filter(log => {
+      if (!log) return false;
+      const q = (searchQuery || '').toLowerCase();
       const matchesSearch =
-        searchQuery === '' ||
-        log.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.uid.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.login_date.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.platform.toLowerCase().includes(searchQuery.toLowerCase());
+        q === '' ||
+        (log.full_name || '').toLowerCase().includes(q) ||
+        (log.email || '').toLowerCase().includes(q) ||
+        (log.uid || '').toLowerCase().includes(q) ||
+        (log.login_date || '').toLowerCase().includes(q) ||
+        (log.platform || '').toLowerCase().includes(q);
 
       const matchesType =
         selectedEventType === 'ALL' || log.event_type === selectedEventType;
 
       const matchesPlatform =
-        selectedPlatform === 'ALL' || log.platform === selectedPlatform;
+        selectedPlatform === 'ALL' || (log.platform || '') === selectedPlatform;
 
       return matchesSearch && matchesType && matchesPlatform;
     });
@@ -267,9 +299,9 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
             {stats?.total_logins ?? logs.length}
           </div>
           <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">
-            <span className="text-cyan-400 font-medium">{stats?.event_types.signups ?? 0} sign-ups</span>
+            <span className="text-cyan-400 font-medium">{stats?.event_types?.signups ?? 0} sign-ups</span>
             <span>·</span>
-            <span className="text-slate-300">{stats?.event_types.logins ?? 0} logins</span>
+            <span className="text-slate-300">{stats?.event_types?.logins ?? 0} logins</span>
           </div>
         </div>
 
@@ -300,23 +332,120 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
           <div className="flex items-center gap-3 text-sm font-semibold text-white mt-1">
             <div className="flex items-center gap-1 text-slate-200" title="Windows Desktop Logins">
               <Laptop className="w-3.5 h-3.5 text-blue-400" />
-              <span>{stats?.platforms.windows ?? 0}</span>
+              <span>{stats?.platforms?.windows ?? 0}</span>
             </div>
             <span>·</span>
             <div className="flex items-center gap-1 text-slate-200" title="Android Mobile Logins">
               <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{stats?.platforms.android ?? 0}</span>
+              <span>{stats?.platforms?.android ?? 0}</span>
             </div>
             <span>·</span>
             <div className="flex items-center gap-1 text-slate-200" title="Web Portal Logins">
               <Globe className="w-3.5 h-3.5 text-amber-400" />
-              <span>{stats?.platforms.web ?? 0}</span>
+              <span>{stats?.platforms?.web ?? 0}</span>
             </div>
           </div>
           <div className="text-[11px] text-slate-400 mt-1.5 truncate">
             Windows / Android / Web
           </div>
         </div>
+      </div>
+
+      {/* SuperAdmin Approval Panel: Vault PIN Reset Requests */}
+      <div className="p-5 rounded-2xl bg-[#0E1626] border border-amber-500/30 shadow-lg space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#1E2E48]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+              <KeyRound className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Vault PIN Reset Requests</h3>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  (pinRequests || []).filter(r => r?.status === 'pending').length > 0
+                    ? 'bg-amber-950 text-amber-400 border-amber-500/40 animate-pulse'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}>
+                  {(pinRequests || []).filter(r => r?.status === 'pending').length} Pending
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Admin approval for users who forgot their AES-256 Credentials Vault PIN.
+              </p>
+            </div>
+          </div>
+
+          {approveSuccessMsg && (
+            <div className="text-xs text-emerald-400 bg-emerald-950/80 border border-emerald-500/30 px-3 py-1 rounded-lg flex items-center gap-1.5 animate-fade-in">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{approveSuccessMsg}</span>
+            </div>
+          )}
+        </div>
+
+        {(!pinRequests || pinRequests.length === 0) ? (
+          <div className="py-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>No pending PIN reset requests. All user vaults are securely operating.</span>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead>
+                <tr className="border-b border-[#1E2E48] text-[11px] text-slate-400 uppercase tracking-wider font-mono">
+                  <th className="py-2 px-3">User / Email</th>
+                  <th className="py-2 px-3">Google UID</th>
+                  <th className="py-2 px-3">Requested At</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1A2538]">
+                {(pinRequests || []).map((req, idx) => (
+                  <tr key={req.id || req.uid || idx} className="hover:bg-[#131E30]/50 transition-colors">
+                    <td className="py-2.5 px-3">
+                      <div className="font-semibold text-white">{req.full_name || 'Operator'}</div>
+                      <div className="text-[11px] text-slate-400">{req.email}</div>
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">
+                      {req.uid ? `${req.uid.slice(0, 14)}...` : 'N/A'}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-400 text-[11px]">
+                      {req.requestedAt ? new Date(req.requestedAt).toLocaleString() : 'Just now'}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      {req.status === 'approved' ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Approved</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400 bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                          <Clock className="w-3 h-3" />
+                          <span>Pending Approval</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {req.status === 'pending' ? (
+                        <button
+                          onClick={() => handleApproveReset(req)}
+                          disabled={approvingId === (req.id || req.uid)}
+                          className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{approvingId === (req.id || req.uid) ? 'Approving...' : 'Approve Reset'}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-500">Reset Enabled</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Search & Filter Toolbar */}
@@ -391,7 +520,7 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1F2937]/50 font-normal">
-              {loading && logs.length === 0 ? (
+              {loading && (!logs || logs.length === 0) ? (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-slate-400">
                     <div className="flex flex-col items-center gap-2">
@@ -400,7 +529,7 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
                     </div>
                   </td>
                 </tr>
-              ) : filteredLogs.length === 0 ? (
+              ) : (!filteredLogs || filteredLogs.length === 0) ? (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-slate-400">
                     <div className="flex flex-col items-center gap-2">
@@ -411,10 +540,10 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((item, idx) => {
+                (filteredLogs || []).map((item, idx) => {
                   const isSignup = item.event_type === 'NEW_ACCOUNT_SIGNUP';
-                  const isWindows = item.platform.includes('Windows');
-                  const isAndroid = item.platform.includes('Android');
+                  const isWindows = (item.platform || '').includes('Windows');
+                  const isAndroid = (item.platform || '').includes('Android');
                   const uniqueId = item.id || `log-${idx}`;
 
                   return (
@@ -428,7 +557,7 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
                           {item.photo_url ? (
                             <img
                               src={item.photo_url}
-                              alt={item.full_name}
+                              alt={item.full_name || 'Operator'}
                               className="w-8 h-8 rounded-full object-cover border border-[#2D3F59] shrink-0"
                               onError={(e) => {
                                 // fallback to initial
@@ -442,10 +571,10 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
                           )}
                           <div className="min-w-0">
                             <div className="font-semibold text-white truncate max-w-[150px]">
-                              {item.full_name}
+                              {item.full_name || 'Anonymous Operator'}
                             </div>
                             <div className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">
-                              UID: {item.uid.substring(0, 16)}...
+                              UID: {(item.uid || '').substring(0, 16)}...
                             </div>
                           </div>
                         </div>
@@ -453,7 +582,7 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
 
                       {/* Google Email */}
                       <td className="py-3.5 px-4 font-mono text-[11px] text-slate-200">
-                        {item.email}
+                        {item.email || 'unknown'}
                       </td>
 
                       {/* Event Type Badge */}

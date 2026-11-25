@@ -7,106 +7,185 @@ import sys
 import time
 import socket
 import threading
+import multiprocessing
 import urllib.request
-from PIL import Image, ImageDraw
-import webview
+import traceback
+
+multiprocessing.freeze_support()
+
+# Safeguard stdio when running under windowed mode (console=False in PyInstaller)
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+APPDATA_DIR = os.environ.get("APPDATA") or os.path.expanduser("~")
+LOG_DIR = os.path.join(APPDATA_DIR, "SentinelGridDefense")
+os.makedirs(LOG_DIR, exist_ok=True)
+CRASH_LOG = os.path.join(LOG_DIR, "launcher_debug.log")
+
+def log_debug(msg: str):
+    try:
+        with open(CRASH_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+            f.flush()
+    except Exception:
+        pass
+
+log_debug(f"Module initialized. sys.executable={sys.executable}, argv={sys.argv}")
+
+try:
+    log_debug("Importing PIL...")
+    from PIL import Image, ImageDraw
+    log_debug("Importing webview...")
+    import webview
+    log_debug("Imported webview successfully.")
+except Exception as e:
+    log_debug(f"Import error: {e}\n{traceback.format_exc()}")
 
 # Configure webview settings for modern desktop security & downloads
 webview.settings["ALLOW_DOWNLOADS"] = True
 
-# Patch Edge Chromium popup handling on Windows so Google OAuth signInWithPopup opens in a
-# native child WebView2 window sharing the CoreWebView2Environment and cookies/storage.
-# This prevents window.close() from closing or blanking the main application window.
-try:
-    from webview.platforms import edgechromium
-    orig_on_new_window = edgechromium.EdgeChrome.on_new_window_request
+def patch_edgechromium_popups():
+    try:
+        log_debug("Attempting EdgeChromium popup patch...")
+        from webview.platforms import edgechromium
+        orig_on_new_window = edgechromium.EdgeChrome.on_new_window_request
 
-    def custom_on_new_window_request(self, sender, args):
-        uri = str(args.get_Uri()).lower() if args.get_Uri() else ""
-        features = args.get_WindowFeatures()
-        has_size = features.get_HasSize() if features else False
+        def custom_on_new_window_request(self, sender, args):
+            uri = str(args.get_Uri()).lower() if args.get_Uri() else ""
+            try:
+                features = args.get_WindowFeatures()
+                has_size = features.get_HasSize() if features else False
+            except Exception:
+                has_size = False
 
-        # If it is a Google OAuth popup, Firebase auth handler, or popup with dimensions:
-        # Let WebView2 open a native child popup window sharing the session and opener.
-        if (
-            "accounts.google.com" in uri or
-            "firebaseapp.com" in uri or
-            "google.com" in uri or
-            has_size or
-            uri == "about:blank" or
-            not uri
-        ):
-            args.set_Handled(False)
-            return
+            if (
+                "accounts.google.com" in uri or
+                "firebaseapp.com" in uri or
+                "google.com" in uri or
+                has_size or
+                uri == "about:blank" or
+                not uri
+            ):
+                args.set_Handled(False)
+                return
 
-        # For external links (e.g. documentation, github repository), open in default external browser
-        if webview.settings.get("OPEN_EXTERNAL_LINKS_IN_BROWSER", True):
-            import webbrowser
-            args.set_Handled(True)
-            webbrowser.open(str(args.get_Uri()))
-        else:
-            orig_on_new_window(self, sender, args)
+            if webview.settings.get("OPEN_EXTERNAL_LINKS_IN_BROWSER", True):
+                import webbrowser
+                args.set_Handled(True)
+                webbrowser.open(str(args.get_Uri()))
+            else:
+                orig_on_new_window(self, sender, args)
 
-    edgechromium.EdgeChrome.on_new_window_request = custom_on_new_window_request
-except Exception as e:
-    print(f"EdgeChromium popup handling initialization note: {e}")
+        edgechromium.EdgeChrome.on_new_window_request = custom_on_new_window_request
+        log_debug("EdgeChromium popup patch applied successfully.")
+    except Exception as e:
+        log_debug(f"EdgeChromium popup patch note: {e}")
 
 # Add backend directory to sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-APP_URL = "http://localhost:8000"
+APP_URL = "http://127.0.0.1:8000"
 
 def is_port_in_use(port: int = 8000) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex(('127.0.0.1', port)) == 0
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.1)
+            return s.connect_ex(('127.0.0.1', port)) == 0
+    except Exception:
+        return False
 
-def wait_for_health(timeout: float = 12.0) -> bool:
+def wait_for_health(timeout: float = 8.0) -> bool:
     start = time.time()
+    url = f"{APP_URL}/api/health"
     while time.time() - start < timeout:
-        for url in [f"{APP_URL}/api/health", "http://127.0.0.1:8000/api/health"]:
-            try:
-                req = urllib.request.Request(url)
-                with urllib.request.urlopen(req, timeout=1.0) as resp:
-                    if resp.status == 200:
-                        return True
-            except Exception:
-                pass
-        time.sleep(0.2)
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=0.3) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            pass
+        time.sleep(0.08)
     return False
 
+def create_dual_stack_socket(port: int = 8000):
+    """
+    Creates a dual-stack socket bound to :: with IPV6_V6ONLY=0,
+    enabling simultaneous IPv4 (127.0.0.1) and IPv6 (::1 localhost) connections.
+    """
+    try:
+        s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        s.bind(('::', port))
+        s.listen(128)
+        return s
+    except Exception:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('0.0.0.0', port))
+        s.listen(128)
+        return s
+
 def run_uvicorn():
+    log_debug("run_uvicorn() started.")
     try:
         import uvicorn
+        log_debug("uvicorn imported successfully.")
         app = None
         try:
+            log_debug("attempting from backend.engine import app...")
             from backend.engine import app
-        except ImportError:
+            log_debug(f"backend.engine imported, app={app}")
+        except Exception as e1:
+            log_debug(f"from backend.engine import app failed: {e1}")
             try:
+                log_debug("attempting from engine import app...")
                 from engine import app
-            except ImportError:
+                log_debug(f"engine imported, app={app}")
+            except Exception as e2:
+                log_debug(f"from engine import app failed: {e2}")
                 import importlib.util
                 engine_candidates = [
                     os.path.join(BASE_DIR, "engine.py"),
                     os.path.join(BASE_DIR, "backend", "engine.py"),
                     os.path.join(getattr(sys, '_MEIPASS', ''), "backend", "engine.py"),
                     os.path.join(getattr(sys, '_MEIPASS', ''), "engine.py"),
+                    os.path.join(os.path.dirname(sys.executable), "backend", "engine.py"),
+                    os.path.join(os.path.dirname(sys.executable), "_internal", "backend", "engine.py"),
+                    os.path.join(os.path.dirname(sys.executable), "_internal", "engine.py"),
                 ]
                 for c in engine_candidates:
+                    log_debug(f"checking candidate engine file: {c} exists={os.path.exists(c)}")
                     if os.path.exists(c):
-                        spec = importlib.util.spec_from_file_location("engine", c)
-                        mod = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(mod)
-                        app = getattr(mod, "app", None)
-                        break
+                        try:
+                            spec = importlib.util.spec_from_file_location("engine", c)
+                            mod = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(mod)
+                            app = getattr(mod, "app", None)
+                            if app:
+                                log_debug(f"Loaded engine app from {c}")
+                                break
+                        except Exception as e_cand:
+                            log_debug(f"Failed loading from candidate {c}: {e_cand}")
+        log_debug(f"Resolved app: {app}")
         if app:
-            uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+            try:
+                log_debug("Attempting dual-stack socket on port 8000...")
+                sock = create_dual_stack_socket(8000)
+                config = uvicorn.Config(app, log_level="warning")
+                server = uvicorn.Server(config)
+                log_debug("Running uvicorn.Server...")
+                server.run(sockets=[sock])
+            except Exception as se:
+                log_debug(f"Dual-stack failed ({se}), falling back to 0.0.0.0:8000")
+                uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
         else:
-            print("Engine app could not be resolved.")
+            log_debug("Engine app could not be resolved in any candidate paths!")
     except Exception as e:
-        print(f"Error starting engine: {e}")
+        log_debug(f"Error in run_uvicorn: {e}\n{traceback.format_exc()}")
 
 def get_tray_icon_image():
     # Look for existing icon
@@ -114,6 +193,8 @@ def get_tray_icon_image():
         os.path.join(BASE_DIR, "sentinelgrid.ico"),
         os.path.join(BASE_DIR, "..", "sentinelgrid.ico"),
         os.path.join(getattr(sys, '_MEIPASS', ''), "sentinelgrid.ico"),
+        os.path.join(os.path.dirname(sys.executable), "sentinelgrid.ico"),
+        os.path.join(os.path.dirname(sys.executable), "_internal", "sentinelgrid.ico"),
         os.path.join(BASE_DIR, "sentinelgrid.png"),
         os.path.join(BASE_DIR, "..", "sentinelgrid.png"),
     ]
@@ -133,23 +214,32 @@ def get_tray_icon_image():
     return img
 
 def main():
-    # 1. Start backend server thread if not already healthy
-    if not wait_for_health(timeout=1.0):
-        if not is_port_in_use(8000):
+    log_debug("main() invoked.")
+    try:
+        # 1. Start backend server thread if not already healthy
+        if is_port_in_use(8000) and wait_for_health(timeout=0.4):
+            log_debug("Port 8000 already healthy.")
+        else:
+            log_debug("Port 8000 not active, starting server thread...")
             server_thread = threading.Thread(target=run_uvicorn, daemon=True)
             server_thread.start()
-        # Wait until /api/health responds
-        wait_for_health(timeout=10.0)
+            h_ok = wait_for_health(timeout=10.0)
+            log_debug(f"Health check wait result: {h_ok}")
 
-    # 2. Setup native pywebview window
-    window = webview.create_window(
-        "SentinelGrid Defense",
-        APP_URL,
-        width=1280,
-        height=820,
-        min_size=(1024, 680),
-        background_color="#090d16"
-    )
+        # 2. Setup native pywebview window
+        patch_edgechromium_popups()
+        log_debug(f"Creating webview window for {APP_URL}...")
+        window = webview.create_window(
+            "SentinelGrid Defense",
+            APP_URL,
+            width=1280,
+            height=820,
+            min_size=(1024, 680),
+            background_color="#070B12"
+        )
+    except Exception as e:
+        log_debug(f"Error initializing window: {e}\n{traceback.format_exc()}")
+        return
 
     # State flag to distinguish between user clicking 'X' (minimize to tray) vs 'Exit SentinelGrid' (full shutdown)
     is_shutting_down = False
@@ -220,8 +310,8 @@ def main():
 
         tray = pystray.Icon("SentinelGridDefense", icon_img, "SentinelGrid Defense Suite", menu)
         tray.run_detached()
-    except Exception as e:
-        print(f"System tray warning: {e}")
+    except Exception:
+        pass
 
     # 4. Start webview on main thread with persistent user data directory (disabling InPrivate mode so Google OAuth and session state persist)
     appdata_dir = os.environ.get("APPDATA") or os.path.expanduser("~")
@@ -233,12 +323,16 @@ def main():
 
     try:
         webview.start(private_mode=False, storage_path=storage_dir)
-    except Exception as e:
-        print(f"Native webview fallback: {e}")
+    except Exception:
         import webbrowser
         webbrowser.open(APP_URL)
         while True:
             time.sleep(1)
 
-if __name__ == "__main__":
-    main()
+log_debug(f"Reached module end. __name__={__name__}")
+if __name__ in ("__main__", "__mp_main__"):
+    log_debug("Calling main()...")
+    try:
+        main()
+    except Exception as e:
+        log_debug(f"Unhandled exception in main: {e}\n{traceback.format_exc()}")

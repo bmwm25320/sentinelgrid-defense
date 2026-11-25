@@ -17,10 +17,22 @@ import type {
   VaultStatusResponse,
   LoginAuditLog,
   AuditStats,
-  AuditLogsResponse
+  AuditLogsResponse,
+  VaultBreachReport,
+  NetworkShieldStatus,
+  BlockedIpItem,
+  HardwarePrivacyStatus,
+  UsbShieldStatus,
+  UsbScanResult,
 } from './types';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' &&
+   window.location.origin &&
+   window.location.origin.startsWith('http')
+    ? window.location.origin
+    : 'http://127.0.0.1:8000');
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -226,11 +238,11 @@ export const api = {
     return handleResponse<VaultStatusResponse>(res);
   },
 
-  setupVaultPin: async (pin: string, confirm_pin: string, old_pin?: string, user_id?: string): Promise<{ status: string; message: string }> => {
+  setupVaultPin: async (pin: string, confirm_pin: string, old_pin?: string, user_id?: string, force_reset: boolean = false): Promise<{ status: string; message: string }> => {
     const res = await fetch(`${BASE_URL}/api/vault/setup-pin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin, confirm_pin, old_pin, user_id: user_id || 'default' }),
+      body: JSON.stringify({ pin, confirm_pin, old_pin, user_id: user_id || 'default', force_reset }),
     });
     return handleResponse<{ status: string; message: string }>(res);
   },
@@ -303,5 +315,60 @@ export const api = {
       body: JSON.stringify({ admin_email: adminEmail }),
     });
     return handleResponse<{ status: string; count: number }>(res);
+  },
+
+  checkVaultBreaches: async (pin: string, user_id?: string): Promise<VaultBreachReport> => {
+    const res = await fetch(`${BASE_URL}/api/vault/check-breaches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, user_id: user_id || 'default' }),
+    });
+    return handleResponse<VaultBreachReport>(res);
+  },
+
+  clearClipboard: async (): Promise<{ status: string; os_cleared: boolean }> => {
+    const res = await fetch(`${BASE_URL}/api/vault/clear-clipboard`, { method: 'POST' });
+    return handleResponse<{ status: string; os_cleared: boolean }>(res);
+  },
+
+  getNetworkShieldStatus: async (): Promise<NetworkShieldStatus> => {
+    const res = await fetch(`${BASE_URL}/api/network/shield-status`);
+    return handleResponse<NetworkShieldStatus>(res);
+  },
+
+  blockNetworkIp: async (ip: string, reason?: string): Promise<{ status: string; entry: BlockedIpItem; blocked_ips: BlockedIpItem[] }> => {
+    const res = await fetch(`${BASE_URL}/api/network/block-ip`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, reason }),
+    });
+    return handleResponse<{ status: string; entry: BlockedIpItem; blocked_ips: BlockedIpItem[] }>(res);
+  },
+
+  unblockNetworkIp: async (ip: string): Promise<{ status: string; ip: string; blocked_ips: BlockedIpItem[] }> => {
+    const params = new URLSearchParams({ ip });
+    const res = await fetch(`${BASE_URL}/api/network/block-ip?${params.toString()}`, {
+      method: 'DELETE',
+    });
+    return handleResponse<{ status: string; ip: string; blocked_ips: BlockedIpItem[] }>(res);
+  },
+
+  getHardwarePrivacyGuard: async (): Promise<HardwarePrivacyStatus> => {
+    const res = await fetch(`${BASE_URL}/api/privacy/hardware-guard`);
+    return handleResponse<HardwarePrivacyStatus>(res);
+  },
+
+  getUsbStatus: async (): Promise<UsbShieldStatus> => {
+    const res = await fetch(`${BASE_URL}/api/usb/status`);
+    return handleResponse<UsbShieldStatus>(res);
+  },
+
+  runUsbScan: async (target_path?: string): Promise<{ status: string; message?: string; results: UsbScanResult[] }> => {
+    const res = await fetch(`${BASE_URL}/api/usb/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_path }),
+    });
+    return handleResponse<{ status: string; message?: string; results: UsbScanResult[] }>(res);
   },
 };
