@@ -11,6 +11,7 @@ import { AdminAuditView } from './components/AdminAuditView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { MobileApkModal } from './components/MobileApkModal';
 import { SettingsModal } from './components/SettingsModal';
+import { GeminiBackgroundCopilot } from './components/GeminiBackgroundCopilot';
 import { api } from './api';
 import { auth, fbSignOut } from './firebase';
 import type { Telemetry, AlertItem, QuarantineItem, ShieldConfig, DeviceAudit, SmartScanState, AuthUser } from './types';
@@ -368,6 +369,16 @@ export default function App() {
         onSaveApiKey={handleUpdateApiKey}
         audit={audit}
         onRefreshData={fetchAllData}
+      />
+
+      {/* Always-On Background Gemini Co-Pilot (Accessible from every tab & Ctrl+Shift+G) */}
+      <GeminiBackgroundCopilot
+        audit={audit}
+        alerts={alerts}
+        apiKey={apiKey}
+        onNavigateTab={setActiveTab}
+        onStartQuickScan={handleStartQuickScan}
+        onDataUpdated={fetchAllData}
       />
     </div>
   );

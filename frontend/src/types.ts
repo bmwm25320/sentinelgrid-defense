@@ -430,5 +430,48 @@ export interface UsbShieldStatus {
   last_scan: UsbScanResult | null;
 }
 
+export interface ActiveAppInfo {
+  process_name: string;
+  window_title: string;
+  pid: number;
+  exe?: string;
+  detected_at: string;
+}
+
+export interface GeminiContextState {
+  background_enabled: boolean;
+  hotkey: string;
+  current_app: ActiveAppInfo;
+  last_external_app: ActiveAppInfo | null;
+  recent_apps: ActiveAppInfo[];
+  summon_counter: number;
+}
+
+export interface GeminiTaskOption {
+  id: string;
+  title: string;
+  description: string;
+  impact: 'SAFE' | 'FAST' | 'DEEP' | string;
+  action_type: string;
+  params?: Record<string, any>;
+}
+
+export interface GeminiTaskPlan {
+  task: string;
+  used_gemini_llm: boolean;
+  active_app: ActiveAppInfo | Record<string, any>;
+  analysis: string;
+  options: GeminiTaskOption[];
+  planned_at: string;
+}
+
+export interface GeminiExecuteResult {
+  status: string;
+  action_type: string;
+  summary: string;
+  navigate_to?: string;
+  details?: Record<string, any>;
+}
+
 
 

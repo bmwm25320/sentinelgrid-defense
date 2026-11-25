@@ -6,16 +6,21 @@ import {
   RotateCw,
   Play,
   User,
+  CheckCircle2,
+  ShieldCheck,
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import type { DeviceAudit, AlertItem, StartupItem, VulnerabilityItem } from '../types';
+import { api } from '../api';
+import type { DeviceAudit, AlertItem, StartupItem, VulnerabilityItem, GeminiTaskOption } from '../types';
 
 interface Message {
   id: string;
-  sender: 'user' | 'assistant';
+  sender: 'user' | 'assistant' | 'execution';
   text: string;
   timestamp: string;
   actionTool?: 'run_scan' | 'view_quarantine' | null;
+  options?: GeminiTaskOption[];
+  executedOptionId?: string;
 }
 
 interface AssistantViewProps {
@@ -50,6 +55,7 @@ Your device health score is currently **${audit?.security_score || 85}/100**, an
 
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [executingOptId, setExecutingOptId] = useState<string | null>(null);
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [tempKey, setTempKey] = useState(apiKey);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -94,9 +100,25 @@ Your device health score is currently **${audit?.security_score || 85}/100**, an
 
     const deviceContext = buildDeviceContext();
     const activeKey = apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
-
-    // Check if query is asking to scan
     const isScanRequest = query.toLowerCase().includes('scan');
+
+    // Plan structured interactive Task -> Options via Background Gemini Co-Pilot Engine
+    try {
+      const plan = await api.planGeminiTask(query.trim(), activeKey);
+      const assistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        sender: 'assistant',
+        text: plan.analysis,
+        options: plan.options,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        actionTool: isScanRequest ? 'run_scan' : null,
+      };
+      setMessages(prev => [...prev, assistantMsg]);
+      setLoading(false);
+      return;
+    } catch {
+      // Fall back to direct @google/genai or offline planner
+    }
 
     // 1. Try Gemini 2.5 Flash via @google/genai if key is available
     if (activeKey) {
@@ -171,6 +193,41 @@ ${JSON.stringify(deviceContext, null, 2)}`;
     }, 450);
   };
 
+  const handleExecuteOption = async (msgId: string, opt: GeminiTaskOption) => {
+    setExecutingOptId(opt.id);
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+      const res = await api.executeGeminiOption(opt.id, opt.action_type, opt.params);
+      if (res.navigate_to) {
+        onNavigateTab(res.navigate_to);
+      } else if (opt.action_type === 'quick_scan') {
+        onStartQuickScan();
+      }
+      setMessages(prev =>
+        prev
+          .map(m => (m.id === msgId ? { ...m, executedOptionId: opt.id } : m))
+          .concat({
+            id: (Date.now() + 2).toString(),
+            sender: 'execution',
+            text: `Completed "${opt.title}": ${res.summary}`,
+            timestamp: ts,
+          })
+      );
+    } catch (err: any) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: (Date.now() + 2).toString(),
+          sender: 'execution',
+          text: `Note for "${opt.title}": ${err.message}`,
+          timestamp: ts,
+        },
+      ]);
+    } finally {
+      setExecutingOptId(null);
+    }
+  };
+
   const handleSaveKey = () => {
     onUpdateApiKey(tempKey.trim());
     setShowKeyInput(false);
@@ -243,10 +300,60 @@ ${JSON.stringify(deviceContext, null, 2)}`;
                 className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-xs leading-relaxed space-y-2 ${
                   isUser
                     ? 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-100 rounded-tr-none'
+                    : msg.sender === 'execution'
+                    ? 'bg-cyan-950/40 border border-cyan-500/40 text-cyan-200 rounded-tl-none shadow-sm'
                     : 'bg-[#182232] border border-[#2B384E] text-slate-200 rounded-tl-none shadow-sm'
                 }`}
               >
-                <div className="whitespace-pre-wrap">{msg.text}</div>
+                <div className="whitespace-pre-wrap flex items-start gap-2">
+                  {msg.sender === 'execution' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+                  <span>{msg.text}</span>
+                </div>
+
+                {/* Clickable Options Returned by Gemini */}
+                {msg.options && msg.options.length > 0 && (
+                  <div className="pt-2 space-y-1.5">
+                    <div className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">
+                      Available Options — Choose one to execute:
+                    </div>
+                    {msg.options.map((opt) => {
+                      const isDone = msg.executedOptionId === opt.id;
+                      const isRunning = executingOptId === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => handleExecuteOption(msg.id, opt)}
+                          disabled={Boolean(executingOptId)}
+                          className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                            isDone
+                              ? 'bg-emerald-950/40 border-emerald-500/50'
+                              : 'bg-[#0F172A] hover:bg-[#162238] border-[#26354E] hover:border-emerald-500/50'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-white flex items-center gap-1.5">
+                              <span>{opt.title}</span>
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700 font-mono">
+                                {opt.impact}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">{opt.description}</p>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-slate-950 font-bold text-[10px] flex items-center gap-1 shrink-0">
+                            {isRunning ? (
+                              <RotateCw className="w-3 h-3 animate-spin" />
+                            ) : isDone ? (
+                              <ShieldCheck className="w-3 h-3" />
+                            ) : (
+                              <Play className="w-3 h-3 fill-current" />
+                            )}
+                            <span>{isRunning ? 'Working...' : isDone ? 'Done' : 'Execute'}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* Optional in-chat action button */}
                 {msg.actionTool === 'run_scan' && (

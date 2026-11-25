@@ -69,4 +69,18 @@ public class SentinelDeviceGuardTest {
         assertEquals("SAFE", safe.status);
         assertEquals(0, safe.riskScore);
     }
+
+    @Test
+    public void testAndroidGeminiTaskOptionsPlanner() {
+        SentinelDeviceGuardPlugin.AndroidTaskPlan linkPlan =
+            SentinelDeviceGuardPlugin.planAndroidTaskOptions("Check if http://evil.tk/app.apk is safe");
+        assertNotNull(linkPlan.analysis);
+        assertTrue(linkPlan.options.size() >= 2);
+        assertEquals("CHECK_URL", linkPlan.options.get(0).actionType);
+
+        SentinelDeviceGuardPlugin.AndroidTaskPlan generalPlan =
+            SentinelDeviceGuardPlugin.planAndroidTaskOptions("Protect my Android device");
+        assertTrue(generalPlan.options.size() >= 3);
+        assertEquals("SCAN_APPS", generalPlan.options.get(0).actionType);
+    }
 }

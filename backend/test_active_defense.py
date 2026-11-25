@@ -85,6 +85,39 @@ class TestWindowsActiveDefense(unittest.TestCase):
         self.assertEqual(client.get("/api/privacy/hardware-guard").status_code, 200)
         self.assertEqual(client.get("/api/usb/status").status_code, 200)
 
+    def test_06_gemini_background_copilot_plan_and_execute(self):
+        client = TestClient(engine.app)
+        # 1. Context & background toggle
+        ctx = client.get("/api/gemini/context")
+        self.assertEqual(ctx.status_code, 200)
+        ctx_json = ctx.json()
+        self.assertIn("hotkey", ctx_json)
+        self.assertEqual(ctx_json["hotkey"], "Ctrl+Shift+G")
+
+        summon = client.post("/api/gemini/summon")
+        self.assertEqual(summon.status_code, 200)
+        self.assertGreaterEqual(summon.json()["summon_counter"], 1)
+
+        # 2. Plan Task -> get Options
+        plan_resp = client.post("/api/gemini/plan", json={"task": "My laptop feels slow and check privacy"})
+        self.assertEqual(plan_resp.status_code, 200)
+        plan = plan_resp.json()
+        self.assertTrue(len(plan["options"]) >= 2)
+
+        # 3. Execute selected Option
+        chosen = plan["options"][0]
+        exec_resp = client.post(
+            "/api/gemini/execute",
+            json={
+                "option_id": chosen["id"],
+                "action_type": "hardware_privacy_audit",
+                "params": {},
+            },
+        )
+        self.assertEqual(exec_resp.status_code, 200)
+        self.assertEqual(exec_resp.json()["status"], "executed")
+        self.assertIn("Privacy Audit", exec_resp.json()["summary"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

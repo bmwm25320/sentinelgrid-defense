@@ -24,6 +24,10 @@ import type {
   HardwarePrivacyStatus,
   UsbShieldStatus,
   UsbScanResult,
+  GeminiContextState,
+  GeminiTaskPlan,
+  GeminiExecuteResult,
+  ActiveAppInfo,
 } from './types';
 
 const BASE_URL =
@@ -370,5 +374,45 @@ export const api = {
       body: JSON.stringify({ target_path }),
     });
     return handleResponse<{ status: string; message?: string; results: UsbScanResult[] }>(res);
+  },
+
+  getGeminiContext: async (): Promise<GeminiContextState> => {
+    const res = await fetch(`${BASE_URL}/api/gemini/context`);
+    return handleResponse<GeminiContextState>(res);
+  },
+
+  setGeminiBackgroundMode: async (enabled: boolean): Promise<{ background_enabled: boolean; hotkey: string }> => {
+    const res = await fetch(`${BASE_URL}/api/gemini/background-mode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    return handleResponse<{ background_enabled: boolean; hotkey: string }>(res);
+  },
+
+  planGeminiTask: async (
+    task: string,
+    apiKey?: string,
+    activeApp?: ActiveAppInfo | null
+  ): Promise<GeminiTaskPlan> => {
+    const res = await fetch(`${BASE_URL}/api/gemini/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, api_key: apiKey || '', active_app: activeApp || null }),
+    });
+    return handleResponse<GeminiTaskPlan>(res);
+  },
+
+  executeGeminiOption: async (
+    optionId: string,
+    actionType: string,
+    params?: Record<string, any>
+  ): Promise<GeminiExecuteResult> => {
+    const res = await fetch(`${BASE_URL}/api/gemini/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option_id: optionId, action_type: actionType, params: params || {} }),
+    });
+    return handleResponse<GeminiExecuteResult>(res);
   },
 };

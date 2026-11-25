@@ -10,7 +10,9 @@ import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -336,6 +338,112 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         JSArray reasonsArr = new JSArray();
         for (String r : eval.reasons) reasonsArr.put(r);
         res.put("reasons", reasonsArr);
+        call.resolve(res);
+    }
+
+    public static class AndroidTaskOption {
+        public String id;
+        public String title;
+        public String description;
+        public String actionType;
+        public String param;
+
+        public AndroidTaskOption(String id, String title, String description, String actionType, String param) {
+            this.id = id;
+            this.title = title;
+            this.description = description;
+            this.actionType = actionType;
+            this.param = param;
+        }
+    }
+
+    public static class AndroidTaskPlan {
+        public String analysis;
+        public List<AndroidTaskOption> options = new ArrayList<>();
+    }
+
+    public static AndroidTaskPlan planAndroidTaskOptions(String task) {
+        AndroidTaskPlan plan = new AndroidTaskPlan();
+        String q = task == null ? "" : task.toLowerCase(Locale.US);
+
+        if (q.contains("http") || q.contains(".com") || q.contains(".apk") || q.contains("link") || q.contains("url")) {
+            String candidate = "";
+            for (String token : (task == null ? "" : task).split("\\s+")) {
+                if (token.contains(".") || token.startsWith("http")) {
+                    candidate = token;
+                    break;
+                }
+            }
+            plan.analysis = "I can verify link safety in the background before you open it. Pick an option:";
+            plan.options.add(new AndroidTaskOption("opt_url", "Inspect Link Safety", "Checks phishing, raw IPs & APK drops", "CHECK_URL", candidate.isEmpty() ? "https://example.com" : candidate));
+            plan.options.add(new AndroidTaskOption("opt_wifi", "Audit Active Wi-Fi Security", "Checks captive portal & Private DNS", "CHECK_WIFI", ""));
+            return plan;
+        }
+
+        if (q.contains("wifi") || q.contains("network") || q.contains("vpn")) {
+            plan.analysis = "Ready to inspect your current mobile network connection. Choose how to proceed:";
+            plan.options.add(new AndroidTaskOption("opt_wifi", "Run Wi-Fi & DNS Audit", "Checks transport security & captive portal", "CHECK_WIFI", ""));
+            plan.options.add(new AndroidTaskOption("opt_apps", "Scan Apps for Network Abuse", "Checks sideloaded APKs & stalkerware", "SCAN_APPS", ""));
+            return plan;
+        }
+
+        plan.analysis = "Gemini Background Co-Pilot is ready across apps. Select an action to execute:";
+        plan.options.add(new AndroidTaskOption("opt_scan", "Scan Installed Apps & Stalkerware", "Audits sideloaded APKs & toxic permissions", "SCAN_APPS", ""));
+        plan.options.add(new AndroidTaskOption("opt_wifi", "Check Wi-Fi & DNS Security", "Inspects active connection safety", "CHECK_WIFI", ""));
+        plan.options.add(new AndroidTaskOption("opt_open", "Open Full SentinelGrid Suite", "Launches Vault, Breach Audit & Shields", "OPEN_APP", ""));
+        return plan;
+    }
+
+    @PluginMethod
+    public void getOverlayStatus(PluginCall call) {
+        Context ctx = getContext();
+        boolean hasPerm = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(ctx);
+        JSObject res = new JSObject();
+        res.put("hasOverlayPermission", hasPerm);
+        res.put("serviceRunning", GeminiOverlayService.isRunning);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void requestOverlayPermission(PluginCall call) {
+        Context ctx = getContext();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+            Intent intent = new Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:" + ctx.getPackageName())
+            );
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(intent);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void startBackgroundGemini(PluginCall call) {
+        Context ctx = getContext();
+        String apiKey = call.getString("apiKey", "");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+            call.reject("OVERLAY_PERMISSION_REQUIRED");
+            return;
+        }
+        Intent serviceIntent = new Intent(ctx, GeminiOverlayService.class);
+        serviceIntent.putExtra(GeminiOverlayService.EXTRA_API_KEY, apiKey);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            ctx.startForegroundService(serviceIntent);
+        } else {
+            ctx.startService(serviceIntent);
+        }
+        JSObject res = new JSObject();
+        res.put("started", true);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void stopBackgroundGemini(PluginCall call) {
+        Context ctx = getContext();
+        ctx.stopService(new Intent(ctx, GeminiOverlayService.class));
+        JSObject res = new JSObject();
+        res.put("stopped", true);
         call.resolve(res);
     }
 }

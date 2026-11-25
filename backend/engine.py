@@ -42,6 +42,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import active_defense
+import gemini_copilot
 from active_defense import (
     audit_vault_breaches,
     load_blocked_ips,
@@ -1123,6 +1124,9 @@ usb_shield_thread = threading.Thread(target=usb_drive_shield_loop, daemon=True)
 usb_shield_thread.start()
 log_event("SUCCESS", "CORE", "Real-Time USB Removable Drive Auto-Shield armed.")
 
+gemini_copilot.start_background_tracker()
+log_event("SUCCESS", "GEMINI_COPILOT", "Background Gemini Cross-App Context Tracker armed (Ctrl+Shift+G ready).")
+
 # ==================== FASTAPI APP ====================
 
 app = FastAPI(
@@ -1219,6 +1223,19 @@ class UsbScanRequest(BaseModel):
 class VaultBreachCheckRequest(BaseModel):
     pin: str
     user_id: Optional[str] = "default"
+
+class GeminiBackgroundRequest(BaseModel):
+    enabled: bool
+
+class GeminiPlanRequest(BaseModel):
+    task: str
+    api_key: Optional[str] = ""
+    active_app: Optional[Dict[str, Any]] = None
+
+class GeminiExecuteRequest(BaseModel):
+    option_id: Optional[str] = ""
+    action_type: str
+    params: Optional[Dict[str, Any]] = None
 
 # ==================== ENDPOINTS ====================
 
@@ -2613,6 +2630,182 @@ def run_usb_shield_scan(payload: Optional[UsbScanRequest] = None):
     if results:
         usb_shield_state["last_scan"] = results[-1]
     return {"status": "completed", "results": results}
+
+# ==================== BACKGROUND GEMINI CO-PILOT API ====================
+
+@app.get("/api/gemini/context")
+def get_gemini_background_context():
+    return {
+        "background_enabled": gemini_copilot.active_app_state["background_enabled"],
+        "hotkey": gemini_copilot.active_app_state["hotkey"],
+        "current_app": gemini_copilot.active_app_state["current_app"],
+        "last_external_app": gemini_copilot.active_app_state["last_external_app"],
+        "recent_apps": gemini_copilot.active_app_state["recent_apps"][:6],
+        "summon_counter": gemini_copilot.active_app_state["summon_counter"],
+    }
+
+@app.post("/api/gemini/background-mode")
+def set_gemini_background_mode(payload: GeminiBackgroundRequest):
+    gemini_copilot.active_app_state["background_enabled"] = bool(payload.enabled)
+    log_event(
+        "INFO",
+        "GEMINI_COPILOT",
+        f"Background Cross-App Gemini Co-Pilot {'ENABLED' if payload.enabled else 'PAUSED'}"
+    )
+    return {
+        "background_enabled": gemini_copilot.active_app_state["background_enabled"],
+        "hotkey": gemini_copilot.active_app_state["hotkey"],
+    }
+
+@app.post("/api/gemini/summon")
+def summon_gemini_copilot():
+    cnt = gemini_copilot.request_copilot_summon()
+    return {
+        "summon_counter": cnt,
+        "last_external_app": gemini_copilot.active_app_state["last_external_app"],
+    }
+
+@app.post("/api/gemini/plan")
+def plan_gemini_copilot_task(payload: GeminiPlanRequest):
+    if not payload.task.strip():
+        raise HTTPException(status_code=400, detail="Task prompt cannot be empty.")
+    vm = psutil.virtual_memory()
+    device_summary = {
+        "cpu_percent": psutil.cpu_percent(interval=None),
+        "ram_percent": round(vm.percent, 1),
+        "alerts_blocked": len(alerts_store),
+        "shield_config": shield_config,
+    }
+    plan = gemini_copilot.plan_task_options(
+        task=payload.task.strip(),
+        api_key=payload.api_key or "",
+        explicit_active_app=payload.active_app,
+        device_summary=device_summary,
+    )
+    log_event(
+        "INFO",
+        "GEMINI_COPILOT",
+        f"Planned {len(plan.get('options', []))} options for task: '{payload.task[:50]}'"
+    )
+    return plan
+
+@app.post("/api/gemini/execute")
+def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_tasks: BackgroundTasks):
+    action = (payload.action_type or "").strip()
+    params = payload.params or {}
+    log_event("INFO", "GEMINI_COPILOT", f"Executing chosen Co-Pilot option: {action}")
+
+    if action == "boost_ram":
+        res = optimize_ram(RamOptimizeRequest(pids=[]))
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"RAM Optimization complete! Safely reclaimed {res['reclaimed_mb']} MB (Memory now at {res['new_percent']}%).",
+            "details": res,
+        }
+
+    if action == "quick_scan":
+        res = run_smart_scan()
+        threats_n = len(res.get("threats_detected", []))
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Smart Scan complete! Inspected {res.get('items_scanned', 0)} items. Threats found: {threats_n}.",
+            "details": res,
+        }
+
+    if action == "fast_laptop_scan":
+        res = start_fast_laptop_scan(background_tasks)
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": "5-Stage Fast Diagnostic Scan started across memory, registry startup keys, folders, and sockets.",
+            "details": res,
+        }
+
+    if action == "hardware_privacy_audit":
+        hw = inspect_hardware_privacy()
+        arp = inspect_arp_mitm()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": (
+                f"Privacy Audit: Webcam {'IN USE' if hw['webcam_in_use'] else 'Locked Safe'} · "
+                f"Microphone {'IN USE' if hw['microphone_in_use'] else 'Armed'} · "
+                f"ARP MITM: {arp['status']} ({arp['entries_checked']} entries checked)."
+            ),
+            "details": {"hardware_privacy": hw, "arp_mitm": arp},
+        }
+
+    if action == "scan_usb":
+        res = run_usb_shield_scan(None)
+        if res.get("status") == "no_usb_detected":
+            return {
+                "status": "executed",
+                "action_type": action,
+                "summary": res.get("message", "No removable USB drives connected. Auto-Shield remains armed."),
+                "details": res,
+            }
+        total_f = sum(r.get("files_scanned", 0) for r in res.get("results", []))
+        total_t = sum(r.get("threats_found", 0) for r in res.get("results", []))
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"USB Scan complete: {total_f} files inspected, {total_t} threats quarantined.",
+            "details": res,
+        }
+
+    if action == "check_url":
+        url_val = str(params.get("url") or "").strip()
+        if not url_val:
+            raise HTTPException(status_code=400, detail="Missing 'url' parameter for check_url action.")
+        res = check_url(CheckUrlRequest(url=url_val))
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Link Check ({res['domain']}): {res['status']} (Risk Score {res['risk_score']}/100) — {res['explanation']}",
+            "details": res,
+        }
+
+    if action == "block_ip":
+        ip_val = str(params.get("ip") or "").strip()
+        if not ip_val:
+            raise HTTPException(status_code=400, detail="Missing 'ip' parameter for block_ip action.")
+        res = block_network_ip(BlockIpRequest(ip=ip_val, reason=str(params.get("reason") or "Gemini Co-Pilot Firewall Block")))
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Firewall rule added for {ip_val}: {res['entry']['enforcement_note']}",
+            "details": res,
+        }
+
+    if action == "inspect_active_app":
+        pid_val = int(params.get("pid") or 0)
+        pname_val = str(params.get("process_name") or "")
+        forensics = gemini_copilot.inspect_process_forensics(pid_val, pname_val)
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": forensics.get("summary", "Process forensics completed."),
+            "details": forensics,
+        }
+
+    if action == "navigate_tab":
+        tab_val = str(params.get("tab") or "home")
+        return {
+            "status": "executed",
+            "action_type": action,
+            "navigate_to": tab_val,
+            "summary": f"Switched workspace to '{tab_val}' shield view.",
+            "details": {"tab": tab_val},
+        }
+
+    return {
+        "status": "executed",
+        "action_type": action,
+        "summary": f"Completed Co-Pilot action '{action}'.",
+        "details": params,
+    }
 
 # ==================== CENTRALIZED AUDIT LOGGER ====================
 ADMIN_EMAIL_LOWER = "bmwm25320@gmail.com"

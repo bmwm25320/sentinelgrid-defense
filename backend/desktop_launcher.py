@@ -262,6 +262,42 @@ def main():
         except Exception:
             pass
 
+    def summon_gemini_copilot():
+        try:
+            req = urllib.request.Request(
+                f"{APP_URL}/api/gemini/summon",
+                data=b"{}",
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            urllib.request.urlopen(req, timeout=2).close()
+        except Exception:
+            pass
+        show_dashboard()
+
+    def register_windows_gemini_hotkey():
+        """Registers global Ctrl+Shift+G hotkey so Gemini can be summoned from any Windows app."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            MOD_CONTROL = 0x0002
+            MOD_SHIFT = 0x0004
+            VK_G = 0x47
+            HOTKEY_ID = 9001
+            if not user32.RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_SHIFT, VK_G):
+                log_debug("Ctrl+Shift+G hotkey already registered or unavailable.")
+                return
+            log_debug("Global Windows hotkey Ctrl+Shift+G registered for Background Gemini Co-Pilot.")
+            msg = wintypes.MSG()
+            while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+                if msg.message == 0x0312 and msg.wParam == HOTKEY_ID:  # WM_HOTKEY
+                    summon_gemini_copilot()
+        except Exception as hk_err:
+            log_debug(f"Global hotkey listener note: {hk_err}")
+
+    threading.Thread(target=register_windows_gemini_hotkey, daemon=True).start()
+
     def run_quick_scan():
         try:
             req = urllib.request.Request(
@@ -303,6 +339,7 @@ def main():
             item("Protection: Active (ARMED)", lambda: None, enabled=False),
             pystray.Menu.SEPARATOR,
             item("Open Security Dashboard", lambda: show_dashboard(), default=True),
+            item("Ask Gemini Co-Pilot (Ctrl+Shift+G)", lambda: summon_gemini_copilot()),
             item("Run Quick Smart Scan", lambda: run_quick_scan()),
             pystray.Menu.SEPARATOR,
             item("Exit SentinelGrid", on_exit)

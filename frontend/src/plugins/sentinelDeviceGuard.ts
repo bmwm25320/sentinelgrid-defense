@@ -39,6 +39,11 @@ export interface AndroidWifiStatus {
   advice: string;
 }
 
+export interface AndroidOverlayStatus {
+  hasOverlayPermission: boolean;
+  serviceRunning: boolean;
+}
+
 export interface SentinelDeviceGuardPlugin {
   scanInstalledApps(): Promise<AndroidAppScanResult>;
   inspectWifiSecurity(): Promise<AndroidWifiStatus>;
@@ -49,6 +54,10 @@ export interface SentinelDeviceGuardPlugin {
     risk_score: number;
     reasons: string[];
   }>;
+  getOverlayStatus(): Promise<AndroidOverlayStatus>;
+  requestOverlayPermission(): Promise<void>;
+  startBackgroundGemini(options: { apiKey?: string }): Promise<{ started: boolean }>;
+  stopBackgroundGemini(): Promise<{ stopped: boolean }>;
 }
 
 export const SentinelDeviceGuard = registerPlugin<SentinelDeviceGuardPlugin>('SentinelDeviceGuard');
