@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi.testclient import TestClient
 import active_defense
+import kaspersky_suite
 import engine
 
 
@@ -141,6 +142,57 @@ class TestWindowsActiveDefense(unittest.TestCase):
         self.assertEqual(trim.status_code, 200)
         self.assertEqual(trim.json()["status"], "success")
         self.assertGreaterEqual(trim.json()["trimmed_processes_count"], 1)
+
+    def test_08_kaspersky_suite_endpoints_and_helpers(self):
+        # 1. Disk junk scanner helper
+        junk = kaspersky_suite.scan_disk_junk(max_files_per_dir=50)
+        self.assertIn("total_files", junk)
+        self.assertIn("total_mb", junk)
+        self.assertIsInstance(junk["categories"], list)
+
+        # 2. Winget parser unit check (deterministic tabular stdout)
+        sample_winget = (
+            "Name               Id                    Version   Available  Source\n"
+            "--------------------------------------------------------------------\n"
+            "Google Chrome      Google.Chrome         120.0.1   130.0.2    winget\n"
+            "Notepad++          Notepad++.Notepad++   8.6.0     8.7.1      winget\n"
+            "2 upgrades available.\n"
+        )
+        parsed = kaspersky_suite.parse_winget_upgrade_output(sample_winget)
+        self.assertEqual(len(parsed), 2)
+        self.assertEqual(parsed[0]["id"], "Google.Chrome")
+        self.assertEqual(parsed[0]["severity"], "HIGH")
+        self.assertEqual(parsed[1]["severity"], "MEDIUM")
+
+        # 3. FastAPI Kaspersky Parity endpoints
+        client = TestClient(engine.app)
+
+        junk_res = client.get("/api/system/junk-scan")
+        self.assertEqual(junk_res.status_code, 200)
+        self.assertIn("categories", junk_res.json())
+
+        startup_res = client.get("/api/startup/list")
+        self.assertEqual(startup_res.status_code, 200)
+        self.assertIn("entries", startup_res.json())
+
+        protect_res = client.post("/api/startup/toggle", json={"name": "SentinelGridDefense", "enabled": False})
+        self.assertEqual(protect_res.status_code, 403)
+
+        sites_res = client.get("/api/safemoney/sites")
+        self.assertEqual(sites_res.status_code, 200)
+        self.assertGreaterEqual(len(sites_res.json()["sites"]), 4)
+
+        phish_block = client.post("/api/safemoney/launch", json={"url": "http://paypal-login-security-alert.tk/verify"})
+        self.assertEqual(phish_block.status_code, 403)
+
+        zip_res = client.get("/api/download/browser-extension")
+        self.assertEqual(zip_res.status_code, 200)
+        self.assertIn("application/zip", zip_res.headers.get("content-type", ""))
+        self.assertTrue(zip_res.content.startswith(b"PK"))
+
+        plan_res = client.post("/api/gemini/plan", json={"task": "Open my bank portal in safe money"})
+        self.assertEqual(plan_res.status_code, 200)
+        self.assertTrue(any(opt["action_type"] == "open_safe_money" for opt in plan_res.json()["options"]))
 
 
 if __name__ == "__main__":

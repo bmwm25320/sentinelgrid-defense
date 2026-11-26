@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { width: 290px; margin: 0; padding: 14px; font-family: system-ui, sans-serif; background: #0B111E; color: #f8fafc; }
+    .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .title { font-size: 13px; font-weight: 700; color: #10b981; }
+    .box { padding: 10px; border-radius: 10px; background: #131B2B; border: 1px solid #1E293B; font-size: 12px; margin-bottom: 10px; }
+    button { width: 100%; padding: 8px 12px; border-radius: 8px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 6px; }
+    .safe { background: #10b981; color: #052e16; }
+    .toggle { background: #1E293B; color: #e2e8f0; border: 1px solid #334155; }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <span class="title">SentinelGrid Web Shield</span>
+    <span id="statusBadge" style="font-size:10px;color:#34d399;font-weight:700;">ACTIVE</span>
+  </div>
+  <div class="box">
+    <div>Threats Blocked: <strong id="blockedCount">0</strong></div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:4px;" id="currentHost">Monitoring active tab...</div>
+  </div>
+  <button class="safe" id="safeMoneyBtn">Open Current Site in Safe Money</button>
+  <button class="toggle" id="toggleBtn">Pause Web Shield</button>
+  <script src="popup.js"></script>
+</body>
+</html>

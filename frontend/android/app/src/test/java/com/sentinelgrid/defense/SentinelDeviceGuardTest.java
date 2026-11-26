@@ -1,6 +1,12 @@
 package com.sentinelgrid.defense;
 
 import org.junit.Test;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import static org.junit.Assert.*;
 
 public class SentinelDeviceGuardTest {
@@ -82,6 +88,11 @@ public class SentinelDeviceGuardTest {
             SentinelDeviceGuardPlugin.planAndroidTaskOptions("Protect my Android device");
         assertTrue(generalPlan.options.size() >= 3);
         assertEquals("SCAN_APPS", generalPlan.options.get(0).actionType);
+
+        SentinelDeviceGuardPlugin.AndroidTaskPlan boostPlan =
+            SentinelDeviceGuardPlugin.planAndroidTaskOptions("My phone is slow, clean RAM and boost speed");
+        assertTrue(boostPlan.options.size() >= 2);
+        assertEquals("BOOST_RAM", boostPlan.options.get(0).actionType);
     }
 
     @Test
@@ -90,5 +101,25 @@ public class SentinelDeviceGuardTest {
         assertFalse(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.sentinelgrid.defense", "com.sentinelgrid.defense", false));
         assertFalse(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.android.systemui", "com.sentinelgrid.defense", false));
         assertFalse(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.android.phone", "com.sentinelgrid.defense", true));
+    }
+
+    @Test
+    public void testNotificationUrlExtractionAndAppLockLogic() {
+        List<String> urls = SentinelDeviceGuardPlugin.extractUrlsFromText(
+            "Urgent KYC update at http://192.168.1.9/verify.apk now!"
+        );
+        assertEquals(1, urls.size());
+        assertEquals("http://192.168.1.9/verify.apk", urls.get(0));
+
+        Set<String> locked = new HashSet<>(Arrays.asList("com.whatsapp", "com.paypal.android.p2pmobile"));
+        Map<String, Long> unlocked = new HashMap<>();
+        long now = 10_000L;
+
+        assertTrue(SentinelDeviceGuardPlugin.isAppLockTarget("com.whatsapp", locked, unlocked, now));
+        assertFalse(SentinelDeviceGuardPlugin.isAppLockTarget("com.android.settings", locked, unlocked, now));
+
+        unlocked.put("com.whatsapp", 25_000L);
+        assertFalse(SentinelDeviceGuardPlugin.isAppLockTarget("com.whatsapp", locked, unlocked, now));
+        assertTrue(SentinelDeviceGuardPlugin.isAppLockTarget("com.whatsapp", locked, unlocked, 30_000L));
     }
 }

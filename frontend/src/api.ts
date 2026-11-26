@@ -28,7 +28,15 @@ import type {
   GeminiTaskPlan,
   GeminiExecuteResult,
   ActiveAppInfo,
+  DiskJunkScanResult,
+  DiskJunkCleanResult,
+  ManagedStartupItem,
+  SoftwareScanResult,
+  SafeMoneySite,
+  SafeMoneyLaunchResult,
 } from './types';
+import { androidLocalStore } from './utils/androidVault';
+import { SentinelDeviceGuard, isAndroidNativeApp } from './plugins/sentinelDeviceGuard';
 
 const BASE_URL =
   import.meta.env.VITE_API_URL ||
@@ -166,54 +174,134 @@ export const api = {
   },
 
   checkUrl: async (url: string): Promise<UrlCheckResult> => {
-    const res = await fetch(`${BASE_URL}/api/check-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    return handleResponse<UrlCheckResult>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/check-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      return handleResponse<UrlCheckResult>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const native = await SentinelDeviceGuard.checkUrlSafety({ url });
+        return {
+          url: native.url,
+          domain: native.domain,
+          status: native.status,
+          risk_score: native.risk_score,
+          verdict_title:
+            native.status === 'DANGEROUS'
+              ? 'Warning: Malicious or Unsafe Link'
+              : native.status === 'SUSPICIOUS'
+              ? 'Caution: Suspicious Link'
+              : 'Link Appears Safe',
+          explanation: native.reasons?.length
+            ? native.reasons.join(' ')
+            : 'Analyzed locally on Android by SentinelDeviceGuard.',
+          reasons: native.reasons || [],
+        };
+      }
+      throw err;
+    }
   },
 
   getExclusions: async (): Promise<ExclusionsResponse> => {
-    const res = await fetch(`${BASE_URL}/api/exclusions`);
-    return handleResponse<ExclusionsResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/exclusions`);
+      return handleResponse<ExclusionsResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const list = androidLocalStore.getExclusions();
+        return { exclusions: list };
+      }
+      throw err;
+    }
   },
 
   addExclusion: async (path: string): Promise<ExclusionsResponse> => {
-    const res = await fetch(`${BASE_URL}/api/exclusions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    });
-    return handleResponse<ExclusionsResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/exclusions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      return handleResponse<ExclusionsResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const list = androidLocalStore.addExclusion(path);
+        return { exclusions: list };
+      }
+      throw err;
+    }
   },
 
   removeExclusion: async (path: string): Promise<ExclusionsResponse> => {
-    const res = await fetch(`${BASE_URL}/api/exclusions`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    });
-    return handleResponse<ExclusionsResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/exclusions`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      return handleResponse<ExclusionsResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const list = androidLocalStore.removeExclusion(path);
+        return { exclusions: list };
+      }
+      throw err;
+    }
   },
 
   getDnd: async (): Promise<DndStatusResponse> => {
-    const res = await fetch(`${BASE_URL}/api/dnd`);
-    return handleResponse<DndStatusResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/dnd`);
+      return handleResponse<DndStatusResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const enabled = androidLocalStore.getDnd();
+        return { dnd_enabled: enabled, mode: enabled ? 'SILENT' : 'STANDARD' };
+      }
+      throw err;
+    }
   },
 
   setDnd: async (enabled: boolean): Promise<DndStatusResponse> => {
-    const res = await fetch(`${BASE_URL}/api/dnd`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-    return handleResponse<DndStatusResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/dnd`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      return handleResponse<DndStatusResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const next = androidLocalStore.setDnd(enabled);
+        return { dnd_enabled: next, mode: next ? 'SILENT' : 'STANDARD' };
+      }
+      throw err;
+    }
   },
 
   getRamDiagnostics: async (): Promise<RamDiagnostics> => {
-    const res = await fetch(`${BASE_URL}/api/ram/diagnostics`);
-    return handleResponse<RamDiagnostics>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/ram/diagnostics`);
+      return handleResponse<RamDiagnostics>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        const hw = await SentinelDeviceGuard.getDeviceTelemetry();
+        return {
+          total_gb: Number((hw.memoryTotalMb / 1024).toFixed(1)),
+          used_gb: Number((hw.memoryUsedMb / 1024).toFixed(1)),
+          available_gb: Number((hw.memoryAvailMb / 1024).toFixed(1)),
+          percent: hw.memoryPercent,
+          recommended_reclaim_mb: Math.round(hw.memoryUsedMb * 0.2),
+          safe_count: hw.installedPackagesCount,
+          top_apps: [],
+          grouped_apps: [],
+        };
+      }
+      throw err;
+    }
   },
 
   optimizeRam: async (
@@ -256,49 +344,89 @@ export const api = {
   },
 
   getVaultStatus: async (): Promise<VaultStatusResponse> => {
-    const res = await fetch(`${BASE_URL}/api/vault/status`);
-    return handleResponse<VaultStatusResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/vault/status`);
+      return handleResponse<VaultStatusResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) return androidLocalStore.getVaultStatus();
+      throw err;
+    }
   },
 
   setupVaultPin: async (pin: string, confirm_pin: string, old_pin?: string, user_id?: string, force_reset: boolean = false): Promise<{ status: string; message: string }> => {
-    const res = await fetch(`${BASE_URL}/api/vault/setup-pin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin, confirm_pin, old_pin, user_id: user_id || 'default', force_reset }),
-    });
-    return handleResponse<{ status: string; message: string }>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/vault/setup-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin, confirm_pin, old_pin, user_id: user_id || 'default', force_reset }),
+      });
+      return handleResponse<{ status: string; message: string }>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        return androidLocalStore.setupVaultPin(pin, confirm_pin, old_pin, user_id || 'default', force_reset);
+      }
+      throw err;
+    }
   },
 
   verifyVaultPin: async (pin: string, user_id?: string): Promise<VaultVerifyResponse> => {
-    const res = await fetch(`${BASE_URL}/api/vault/verify-pin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin, user_id: user_id || 'default' }),
-    });
-    return handleResponse<VaultVerifyResponse>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/vault/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin, user_id: user_id || 'default' }),
+      });
+      return handleResponse<VaultVerifyResponse>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        return androidLocalStore.verifyVaultPin(pin, user_id || 'default');
+      }
+      throw err;
+    }
   },
 
   getVaultEntries: async (pin: string, user_id?: string): Promise<{ entries: VaultAccountItem[]; total: number }> => {
-    const params = new URLSearchParams({ pin, user_id: user_id || 'default' });
-    const res = await fetch(`${BASE_URL}/api/vault?${params.toString()}`);
-    return handleResponse<{ entries: VaultAccountItem[]; total: number }>(res);
+    try {
+      const params = new URLSearchParams({ pin, user_id: user_id || 'default' });
+      const res = await fetch(`${BASE_URL}/api/vault?${params.toString()}`);
+      return handleResponse<{ entries: VaultAccountItem[]; total: number }>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        return androidLocalStore.getVaultEntries(pin, user_id || 'default');
+      }
+      throw err;
+    }
   },
 
   saveVaultEntry: async (pin: string, entry: VaultAccountItem, user_id?: string): Promise<{ status: string; entry: VaultAccountItem }> => {
-    const res = await fetch(`${BASE_URL}/api/vault`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin, user_id: user_id || 'default', entry }),
-    });
-    return handleResponse<{ status: string; entry: VaultAccountItem }>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/vault`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin, user_id: user_id || 'default', entry }),
+      });
+      return handleResponse<{ status: string; entry: VaultAccountItem }>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        return androidLocalStore.saveVaultEntry(pin, entry, user_id || 'default');
+      }
+      throw err;
+    }
   },
 
   deleteVaultEntry: async (id: string, pin: string, user_id?: string): Promise<{ status: string; id: string }> => {
-    const params = new URLSearchParams({ pin, user_id: user_id || 'default' });
-    const res = await fetch(`${BASE_URL}/api/vault/${encodeURIComponent(id)}?${params.toString()}`, {
-      method: 'DELETE',
-    });
-    return handleResponse<{ status: string; id: string }>(res);
+    try {
+      const params = new URLSearchParams({ pin, user_id: user_id || 'default' });
+      const res = await fetch(`${BASE_URL}/api/vault/${encodeURIComponent(id)}?${params.toString()}`, {
+        method: 'DELETE',
+      });
+      return handleResponse<{ status: string; id: string }>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        return androidLocalStore.deleteVaultEntry(id, pin, user_id || 'default');
+      }
+      throw err;
+    }
   },
 
   getAndroidApkUrl: (): string => {
@@ -340,17 +468,36 @@ export const api = {
   },
 
   checkVaultBreaches: async (pin: string, user_id?: string): Promise<VaultBreachReport> => {
-    const res = await fetch(`${BASE_URL}/api/vault/check-breaches`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin, user_id: user_id || 'default' }),
-    });
-    return handleResponse<VaultBreachReport>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/vault/check-breaches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin, user_id: user_id || 'default' }),
+      });
+      return handleResponse<VaultBreachReport>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        return androidLocalStore.checkVaultBreaches(pin, user_id || 'default');
+      }
+      throw err;
+    }
   },
 
   clearClipboard: async (): Promise<{ status: string; os_cleared: boolean }> => {
-    const res = await fetch(`${BASE_URL}/api/vault/clear-clipboard`, { method: 'POST' });
-    return handleResponse<{ status: string; os_cleared: boolean }>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/vault/clear-clipboard`, { method: 'POST' });
+      return handleResponse<{ status: string; os_cleared: boolean }>(res);
+    } catch {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText('');
+          return { status: 'cleared', os_cleared: true };
+        } catch {
+          return { status: 'skipped', os_cleared: false };
+        }
+      }
+      return { status: 'skipped', os_cleared: false };
+    }
   },
 
   getNetworkShieldStatus: async (): Promise<NetworkShieldStatus> => {
@@ -433,4 +580,76 @@ export const api = {
     });
     return handleResponse<GeminiExecuteResult>(res);
   },
+
+  scanDiskJunk: async (): Promise<DiskJunkScanResult> => {
+    const res = await fetch(`${BASE_URL}/api/system/junk-scan`);
+    return handleResponse<DiskJunkScanResult>(res);
+  },
+
+  cleanDiskJunk: async (categoryIds?: string[]): Promise<DiskJunkCleanResult> => {
+    const res = await fetch(`${BASE_URL}/api/system/junk-clean`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_ids: categoryIds || null }),
+    });
+    return handleResponse<DiskJunkCleanResult>(res);
+  },
+
+  listStartupApps: async (): Promise<{ entries: ManagedStartupItem[] }> => {
+    const res = await fetch(`${BASE_URL}/api/startup/list`);
+    return handleResponse<{ entries: ManagedStartupItem[] }>(res);
+  },
+
+  toggleStartupApp: async (name: string, enabled: boolean): Promise<{ name: string; enabled: boolean; status?: string }> => {
+    const res = await fetch(`${BASE_URL}/api/startup/toggle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, enabled }),
+    });
+    return handleResponse<{ name: string; enabled: boolean; status?: string }>(res);
+  },
+
+  getBootPersistence: async (): Promise<{ enabled: boolean; command: string | null }> => {
+    const res = await fetch(`${BASE_URL}/api/system/persistence`);
+    return handleResponse<{ enabled: boolean; command: string | null }>(res);
+  },
+
+  setBootPersistence: async (enabled: boolean): Promise<{ enabled: boolean; command: string | null }> => {
+    const res = await fetch(`${BASE_URL}/api/system/persistence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    return handleResponse<{ enabled: boolean; command: string | null }>(res);
+  },
+
+  scanSoftwareVulnerabilities: async (refresh = false): Promise<SoftwareScanResult> => {
+    const res = await fetch(`${BASE_URL}/api/vulnerabilities/software?refresh=${refresh}`);
+    return handleResponse<SoftwareScanResult>(res);
+  },
+
+  patchSoftwarePackage: async (packageId: string): Promise<{ status: string; package_id: string; message?: string }> => {
+    const res = await fetch(`${BASE_URL}/api/vulnerabilities/patch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ package_id: packageId }),
+    });
+    return handleResponse<{ status: string; package_id: string; message?: string }>(res);
+  },
+
+  getSafeMoneySites: async (): Promise<{ sites: SafeMoneySite[] }> => {
+    const res = await fetch(`${BASE_URL}/api/safemoney/sites`);
+    return handleResponse<{ sites: SafeMoneySite[] }>(res);
+  },
+
+  launchSafeMoney: async (url: string): Promise<SafeMoneyLaunchResult> => {
+    const res = await fetch(`${BASE_URL}/api/safemoney/launch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    return handleResponse<SafeMoneyLaunchResult>(res);
+  },
+
+  getBrowserExtensionUrl: (): string => `${BASE_URL}/api/download/browser-extension`,
 };

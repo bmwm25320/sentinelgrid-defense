@@ -1,15 +1,25 @@
 package com.sentinelgrid.defense;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -47,6 +57,8 @@ public class GeminiOverlayService extends Service {
 
     public static volatile boolean isRunning = false;
     public static final String EXTRA_API_KEY = "gemini_api_key";
+    public static final String KEY_GEMINI_API_KEY = "gemini_saved_api_key";
+    public static final String KEY_GEMINI_BG_ENABLED = "gemini_bg_enabled";
     private static final String CHANNEL_ID = "sentinelgrid_gemini_bg";
     private static final int NOTIFICATION_ID = 4820;
 
@@ -75,9 +87,16 @@ public class GeminiOverlayService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        SharedPreferences prefs = getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
         if (intent != null && intent.hasExtra(EXTRA_API_KEY)) {
             String key = intent.getStringExtra(EXTRA_API_KEY);
-            if (key != null) geminiApiKey = key.trim();
+            if (key != null && !key.trim().isEmpty()) {
+                geminiApiKey = key.trim();
+                prefs.edit().putString(KEY_GEMINI_API_KEY, geminiApiKey).apply();
+            }
+        }
+        if (TextUtils.isEmpty(geminiApiKey)) {
+            geminiApiKey = prefs.getString(KEY_GEMINI_API_KEY, "");
         }
         if (Settings.canDrawOverlays(this) && bubbleView == null) {
             setupFloatingBubble();
@@ -357,7 +376,7 @@ public class GeminiOverlayService extends Service {
                 conn.setDoOutput(true);
 
                 String prompt = "You are SentinelGrid Android Background Co-Pilot. User task: \"" + task + "\". "
-                    + "Return JSON ONLY: {\"analysis\":\"short explanation\",\"options\":[{\"id\":\"o1\",\"title\":\"short action\",\"description\":\"what it does\",\"actionType\":\"SCAN_APPS|CHECK_WIFI|CHECK_URL|OPEN_APP\",\"param\":\"\"}]}";
+                    + "Return JSON ONLY: {\"analysis\":\"short explanation\",\"options\":[{\"id\":\"o1\",\"title\":\"short action\",\"description\":\"what it does\",\"actionType\":\"SCAN_APPS|CHECK_WIFI|CHECK_URL|BOOST_RAM|OPEN_APP\",\"param\":\"\"}]}";
                 JSONObject reqBody = new JSONObject();
                 JSONArray contents = new JSONArray();
                 JSONObject c0 = new JSONObject();
@@ -411,13 +430,64 @@ public class GeminiOverlayService extends Service {
             return;
         }
         if ("SCAN_APPS".equals(opt.actionType)) {
-            int pkgs = getPackageManager().getInstalledPackages(0).size();
-            statusText.setText("Package Audit Complete: Inspected " + pkgs + " installed packages in background. Tap 'Open Full App' for detailed APK risk breakdown.");
+            PackageManager pm = getPackageManager();
+            List<PackageInfo> pkgs = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS);
+            int userApps = 0;
+            int highRisk = 0;
+            int sideloaded = 0;
+            for (PackageInfo p : pkgs) {
+                if (p.applicationInfo == null || getPackageName().equals(p.packageName)) continue;
+                boolean isSys = (p.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+                if (isSys) continue;
+                userApps++;
+                String installer = null;
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        installer = pm.getInstallSourceInfo(p.packageName).getInstallingPackageName();
+                    }
+                } catch (Exception ignored) {}
+                boolean hasLauncher = pm.getLaunchIntentForPackage(p.packageName) != null;
+                SentinelDeviceGuardPlugin.AppRiskEvaluation eval = SentinelDeviceGuardPlugin.evaluateAppRisk(
+                    p.packageName, false, installer, hasLauncher, p.requestedPermissions
+                );
+                if (eval.isSideloaded) sideloaded++;
+                if ("HIGH".equals(eval.riskLevel) || "CRITICAL".equals(eval.riskLevel)) highRisk++;
+            }
+            statusText.setText("APK Audit: " + userApps + " user apps · " + sideloaded + " sideloaded · " + highRisk + " high-risk detected.");
             return;
         }
         if ("CHECK_WIFI".equals(opt.actionType)) {
-            statusText.setText("Wi-Fi Shield Active: Inspecting active transport & Private DNS protection. Tap 'Open Full App' for live network report.");
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            Network active = cm != null ? cm.getActiveNetwork() : null;
+            NetworkCapabilities caps = active != null ? cm.getNetworkCapabilities(active) : null;
+            LinkProperties lp = active != null ? cm.getLinkProperties(active) : null;
+            boolean isVpn = caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN);
+            boolean isCaptive = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
+            boolean privDns = lp != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && lp.isPrivateDnsActive();
+            String transport = (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) ? "Wi-Fi" : "Cellular/Other";
+            statusText.setText("Network (" + transport + "): " + (isCaptive ? "WARNING Captive Portal" : "Safe")
+                + " · VPN: " + (isVpn ? "ON" : "OFF") + " · Private DNS: " + (privDns ? "ON" : "OFF"));
             return;
+        }
+        if ("BOOST_RAM".equals(opt.actionType)) {
+            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            PackageManager pm = getPackageManager();
+            if (am != null) {
+                ActivityManager.MemoryInfo beforeMem = new ActivityManager.MemoryInfo();
+                am.getMemoryInfo(beforeMem);
+                int killed = 0;
+                for (ApplicationInfo app : pm.getInstalledApplications(0)) {
+                    boolean isSys = (app.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+                    if (SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost(app.packageName, getPackageName(), isSys)) {
+                        try { am.killBackgroundProcesses(app.packageName); killed++; } catch (Exception ignored) {}
+                    }
+                }
+                ActivityManager.MemoryInfo afterMem = new ActivityManager.MemoryInfo();
+                am.getMemoryInfo(afterMem);
+                long freedMb = Math.max(0, (afterMem.availMem - beforeMem.availMem) / (1024 * 1024));
+                statusText.setText("RAM Boost Complete: Cleared " + killed + " background apps · Freed " + freedMb + " MB RAM.");
+                return;
+            }
         }
         Intent i = new Intent(this, MainActivity.class);
         i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);

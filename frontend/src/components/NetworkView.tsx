@@ -15,6 +15,10 @@ import {
   Smartphone,
   RotateCw,
   Trash2,
+  Lock,
+  ExternalLink,
+  Download,
+  Shield,
 } from 'lucide-react';
 import type {
   DeviceAudit,
@@ -22,6 +26,8 @@ import type {
   NetworkConnectionItem,
   UrlCheckResult,
   NetworkShieldStatus,
+  SafeMoneySite,
+  SafeMoneyLaunchResult,
 } from '../types';
 import { api } from '../api';
 import {
@@ -50,12 +56,23 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
   const [blockingIp, setBlockingIp] = useState<string | null>(null);
   const [manualIpInput, setManualIpInput] = useState('');
   const [refreshingShield, setRefreshingShield] = useState(false);
+  const [safeMoneySites, setSafeMoneySites] = useState<SafeMoneySite[]>([]);
+  const [safeMoneyUrl, setSafeMoneyUrl] = useState('https://www.paypal.com');
+  const [launchingSafeMoney, setLaunchingSafeMoney] = useState(false);
+  const [safeMoneyResult, setSafeMoneyResult] = useState<SafeMoneyLaunchResult | null>(null);
+  const [safeMoneyError, setSafeMoneyError] = useState<string | null>(null);
 
   const loadNetworkShield = async () => {
     setRefreshingShield(true);
     try {
-      const data = await api.getNetworkShieldStatus();
+      const [data, sitesRes] = await Promise.all([
+        api.getNetworkShieldStatus(),
+        api.getSafeMoneySites().catch(() => ({ sites: [] })),
+      ]);
       setShieldStatus(data);
+      if (sitesRes.sites?.length) {
+        setSafeMoneySites(sitesRes.sites);
+      }
     } catch {
       // Standalone Android or offline mode
     }
@@ -114,6 +131,23 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
       alert(`Unblock failed: ${err.message}`);
     } finally {
       setBlockingIp(null);
+    }
+  };
+
+  const handleLaunchSafeMoney = async (targetUrl?: string) => {
+    const urlToOpen = (targetUrl || safeMoneyUrl).trim();
+    if (!urlToOpen) return;
+    setSafeMoneyUrl(urlToOpen);
+    setLaunchingSafeMoney(true);
+    setSafeMoneyError(null);
+    setSafeMoneyResult(null);
+    try {
+      const res = await api.launchSafeMoney(urlToOpen);
+      setSafeMoneyResult(res);
+    } catch (err: any) {
+      setSafeMoneyError(err.message);
+    } finally {
+      setLaunchingSafeMoney(false);
     }
   };
 
@@ -465,6 +499,100 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             )}
           </div>
         )}
+      </div>
+
+      {/* Safe Money Protected Banking Browser & Chrome/Edge MV3 Web Shield Extension */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Safe Money */}
+        <div className="defender-card p-5 space-y-3 border-emerald-500/20">
+          <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Lock className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-white">Safe Money Protected Banking Browser</h3>
+                <p className="text-[11px] text-slate-400">Opens banks in isolated InPrivate, extension-free sandbox &amp; clears clipboard</p>
+              </div>
+            </div>
+          </div>
+
+          {safeMoneySites.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {safeMoneySites.map((site) => (
+                <button
+                  key={site.url}
+                  type="button"
+                  onClick={() => handleLaunchSafeMoney(site.url)}
+                  className="px-2.5 py-1 rounded-lg bg-[#0D121D] hover:bg-emerald-500/15 border border-[#1F2937] hover:border-emerald-500/40 text-[11px] text-slate-200 transition-colors"
+                >
+                  {site.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={safeMoneyUrl}
+              onChange={(e) => setSafeMoneyUrl(e.target.value)}
+              placeholder="https://netbanking.hdfcbank.com"
+              className="flex-1 bg-[#0D121D] border border-[#1F2937] rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+            />
+            <button
+              onClick={() => handleLaunchSafeMoney()}
+              disabled={launchingSafeMoney || !safeMoneyUrl.trim()}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>{launchingSafeMoney ? 'Launching...' : 'Launch Protected'}</span>
+            </button>
+          </div>
+
+          {safeMoneyResult && (
+            <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/40 text-[11px] text-emerald-300 space-y-0.5">
+              <div className="font-semibold">Isolated Banking Sandbox Active ({safeMoneyResult.safe_money.isolation_mode})</div>
+              <div className="text-slate-300">URL verified safe · Clipboard cleared · Third-party extensions disabled</div>
+            </div>
+          )}
+          {safeMoneyError && (
+            <div className="p-2.5 rounded-lg bg-red-950/30 border border-red-500/40 text-[11px] text-red-300">
+              {safeMoneyError}
+            </div>
+          )}
+        </div>
+
+        {/* Chrome / Edge MV3 Auto Web-Filter Extension */}
+        <div className="defender-card p-5 space-y-3 border-cyan-500/20">
+          <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                <Shield className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-white">Chrome &amp; Edge Web Shield (MV3 Auto-Blocker)</h3>
+                <p className="text-[11px] text-slate-400">Automatically blocks phishing sites before page load &amp; detects online banking</p>
+              </div>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/30 font-bold">
+              MANIFEST V3
+            </span>
+          </div>
+
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Real-time pre-navigation web filter powered by SentinelGrid&apos;s <code className="text-cyan-300">/api/check-url</code> engine. Download and load unpacked into <code className="text-slate-300">chrome://extensions</code> or <code className="text-slate-300">edge://extensions</code> (Developer mode).
+          </p>
+
+          <a
+            href={api.getBrowserExtensionUrl()}
+            download="SentinelGrid_Web_Shield_Extension.zip"
+            className="w-full py-2 px-4 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download SentinelGrid Web Shield Extension (.zip)</span>
+          </a>
+        </div>
       </div>
 
       {/* Active Applications Using Internet */}

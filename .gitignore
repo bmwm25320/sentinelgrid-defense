@@ -21,6 +21,7 @@ frontend/dist/
 backend/releases/*.apk
 backend/releases/*.exe
 
-# Environment files
+# Environment & runtime state files
 .env
 frontend/.env
+backend/blocked_ips.json

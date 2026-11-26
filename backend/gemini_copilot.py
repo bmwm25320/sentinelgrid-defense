@@ -188,6 +188,9 @@ def _call_gemini_rest_for_options(
         "- boost_ram (reclaims unused memory safely without closing active UI)\n"
         "- kill_useless_apps (terminates useless background bloatware, widgets & idle updaters + trims RAM)\n"
         "- trim_ram (flushes standby OS memory working sets without closing apps)\n"
+        "- clean_junk (removes stale Windows temp & browser cache junk files)\n"
+        "- scan_software_updates (audits outdated apps with known vulnerabilities via winget)\n"
+        "- open_safe_money (params: {\"url\": \"...\"} - opens isolated banking browser)\n"
         "- hardware_privacy_audit (checks webcam, microphone, and ARP MITM status)\n"
         "- scan_usb (scans connected USB removable drives)\n"
         "- check_url (params: {\"url\": \"...\"})\n"
@@ -312,6 +315,76 @@ def _heuristic_options_planner(task: str, target_app: Dict[str, Any], device_sum
                     "impact": "SAFE",
                     "action_type": "navigate_tab",
                     "params": {"tab": "network"},
+                },
+            ],
+        }
+
+    if any(k in q for k in ("junk", "temp", "cache", "disk", "storage")):
+        return {
+            "analysis": "I can sweep Windows Temp, Edge/Chrome cache, and crash dumps cleanly without touching active system locks:",
+            "options": [
+                {
+                    "id": "opt_clean_junk",
+                    "title": "Clean Disk Junk & Temp Cache",
+                    "description": "Removes stale temp files and browser cache safely.",
+                    "impact": "FAST",
+                    "action_type": "clean_junk",
+                    "params": {},
+                },
+                {
+                    "id": "opt_open_health",
+                    "title": "Open Disk Junk & Startup Manager",
+                    "description": "Inspect junk categories and disable heavy startup apps.",
+                    "impact": "SAFE",
+                    "action_type": "navigate_tab",
+                    "params": {"tab": "device"},
+                },
+            ],
+        }
+
+    if any(k in q for k in ("bank", "pay", "money", "upi", "paypal", "hdfc", "sbi", "safe money")):
+        target_site = url_match.group(1) if url_match else "https://www.paypal.com"
+        return {
+            "analysis": f"Entering financial portal `{target_site}`. Choose Safe Money isolated banking mode for hardware & clipboard protection:",
+            "options": [
+                {
+                    "id": "opt_safe_money",
+                    "title": f"Launch Safe Money ({target_site[:28]})",
+                    "description": "Opens extension-free InPrivate isolated window and wipes OS clipboard.",
+                    "impact": "SAFE",
+                    "action_type": "open_safe_money",
+                    "params": {"url": target_site},
+                },
+                {
+                    "id": "opt_hw_audit",
+                    "title": "Audit Webcam, Mic & MITM First",
+                    "description": "Verify no spying or ARP spoofing is active before banking.",
+                    "impact": "FAST",
+                    "action_type": "hardware_privacy_audit",
+                    "params": {},
+                },
+            ],
+        }
+
+    if any(k in q for k in ("update", "outdated", "patch", "software", "cve", "vuln")):
+        return {
+            "analysis": "I can check installed Windows software against Winget package versions for outdated or vulnerable apps:",
+            "options": [
+                {
+                    "id": "opt_soft_scan",
+                    "title": "Scan Outdated Software & Vulnerabilities",
+                    "description": "Checks Chrome, Edge, runtimes & utilities for available security patches.",
+                    "impact": "DEEP",
+                    "action_type": "scan_software_updates",
+                    "params": {},
+                },
+                {
+                    "id": "opt_open_dev",
+                    "title": "Open Patch & Health Dashboard",
+                    "description": "Review software updates and apply 1-click patches.",
+                    "impact": "SAFE",
+                    "action_type": "navigate_tab",
+                    "params": {"tab": "device"},
                 },
             ],
         }

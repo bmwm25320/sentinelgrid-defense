@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "SentinelGrid Web & Safe Money Shield",
+  "version": "1.0.0",
+  "description": "Real-time anti-phishing URL interceptor, malicious download blocker, and Safe Money banking launcher backed by SentinelGrid Defense.",
+  "permissions": [
+    "webNavigation",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SentinelGrid Web Shield"
+  }
+}

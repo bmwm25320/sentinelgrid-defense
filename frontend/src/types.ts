@@ -488,5 +488,73 @@ export interface GeminiExecuteResult {
   details?: Record<string, any>;
 }
 
+export interface DiskJunkCategory {
+  id: string;
+  label: string;
+  path: string;
+  file_count: number;
+  size_mb: number;
+}
+
+export interface DiskJunkScanResult {
+  total_files: number;
+  total_mb: number;
+  categories: DiskJunkCategory[];
+  scanned_at: string;
+}
+
+export interface DiskJunkCleanResult {
+  status: string;
+  deleted_files: number;
+  skipped_locked: number;
+  freed_mb: number;
+  cleaned_at: string;
+}
+
+export interface ManagedStartupItem {
+  name: string;
+  command: string;
+  hive: string;
+  enabled: boolean;
+  protected: boolean;
+  suspicious: boolean;
+}
+
+export interface OutdatedSoftwareItem {
+  name: string;
+  id: string;
+  current_version: string;
+  available_version: string;
+  severity: 'HIGH' | 'MEDIUM' | string;
+}
+
+export interface SoftwareScanResult {
+  winget_available: boolean;
+  outdated_count: number;
+  high_severity_count?: number;
+  packages: OutdatedSoftwareItem[];
+  scanned_at: string;
+  error?: string;
+}
+
+export interface SafeMoneySite {
+  name: string;
+  url: string;
+  category: string;
+}
+
+export interface SafeMoneyLaunchResult {
+  safe_money: {
+    status: string;
+    url: string;
+    isolation_mode: string;
+    clipboard_cleared: boolean;
+    extensions_disabled: boolean;
+    launched_at: string;
+  };
+  url_verdict: UrlCheckResult;
+}
+
+
 
 

@@ -43,6 +43,7 @@ if BASE_DIR not in sys.path:
 
 import active_defense
 import gemini_copilot
+import kaspersky_suite
 from active_defense import (
     audit_vault_breaches,
     load_blocked_ips,
@@ -1241,6 +1242,22 @@ class GeminiExecuteRequest(BaseModel):
     option_id: Optional[str] = ""
     action_type: str
     params: Optional[Dict[str, Any]] = None
+
+class JunkCleanRequest(BaseModel):
+    category_ids: Optional[List[str]] = None
+
+class StartupToggleRequest(BaseModel):
+    name: str
+    enabled: bool
+
+class BootPersistenceRequest(BaseModel):
+    enabled: bool
+
+class SafeMoneyLaunchRequest(BaseModel):
+    url: str
+
+class SoftwarePatchRequest(BaseModel):
+    package_id: str
 
 # ==================== ENDPOINTS ====================
 
@@ -2813,6 +2830,42 @@ def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_task
             "details": res,
         }
 
+    if action == "clean_junk":
+        res = kaspersky_suite.clean_disk_junk()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Disk Junk Cleaner complete! Removed {res['deleted_files']} stale temp/cache files and freed {res['freed_mb']} MB disk space.",
+            "details": res,
+        }
+
+    if action == "scan_software_updates":
+        res = kaspersky_suite.scan_outdated_software()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Software Vulnerability Audit finished: Found {res['outdated_count']} outdated apps ({res.get('high_severity_count', 0)} high priority).",
+            "details": res,
+        }
+
+    if action == "open_safe_money":
+        target_url = str(params.get("url") or "https://www.paypal.com")
+        verdict = check_url(CheckUrlRequest(url=target_url))
+        if verdict["status"] == "DANGEROUS":
+            return {
+                "status": "blocked",
+                "action_type": action,
+                "summary": f"Safe Money BLOCKED '{verdict['domain']}' (Risk {verdict['risk_score']}/100): {verdict['explanation']}",
+                "details": verdict,
+            }
+        res = kaspersky_suite.launch_safe_money_browser(target_url)
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Safe Money isolated browser launched for {target_url} with extensions disabled and OS clipboard cleared.",
+            "details": res,
+        }
+
     if action == "quick_scan":
         res = run_smart_scan()
         threats_n = len(res.get("threats_detected", []))
@@ -2915,6 +2968,103 @@ def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_task
         "summary": f"Completed Co-Pilot action '{action}'.",
         "details": params,
     }
+
+# ==================== KASPERSKY PARITY SUITE ENDPOINTS ====================
+
+@app.get("/api/system/junk-scan")
+def scan_system_junk():
+    return kaspersky_suite.scan_disk_junk()
+
+@app.post("/api/system/junk-clean")
+def clean_system_junk(payload: Optional[JunkCleanRequest] = None):
+    cats = payload.category_ids if payload else None
+    res = kaspersky_suite.clean_disk_junk(cats)
+    log_event("SUCCESS", "JUNK_CLEAN", f"Cleaned {res['deleted_files']} junk files; freed {res['freed_mb']} MB disk space.")
+    return res
+
+@app.get("/api/startup/list")
+def get_startup_apps_manager():
+    return {"entries": kaspersky_suite.list_startup_apps()}
+
+@app.post("/api/startup/toggle")
+def toggle_startup_app_entry(payload: StartupToggleRequest):
+    try:
+        res = kaspersky_suite.toggle_startup_app(payload.name, payload.enabled)
+        invalidate_device_audit_cache()
+        log_event("INFO", "STARTUP_MGR", f"Startup entry '{payload.name}' {'ENABLED' if payload.enabled else 'DISABLED'}.")
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=403, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle startup item: {exc}")
+
+@app.get("/api/system/persistence")
+def get_boot_persistence():
+    return kaspersky_suite.get_boot_persistence_status()
+
+@app.post("/api/system/persistence")
+def set_boot_persistence(payload: BootPersistenceRequest):
+    res = kaspersky_suite.set_boot_persistence(payload.enabled)
+    log_event("INFO", "BOOT_GUARD", f"Windows Boot Auto-Start {'ENABLED' if payload.enabled else 'DISABLED'}.")
+    return res
+
+@app.get("/api/vulnerabilities/software")
+def get_outdated_software_vulns(refresh: bool = False):
+    return kaspersky_suite.scan_outdated_software(force=refresh)
+
+@app.post("/api/vulnerabilities/patch")
+def patch_outdated_software(payload: SoftwarePatchRequest):
+    try:
+        res = kaspersky_suite.patch_software_package(payload.package_id)
+        log_event("SUCCESS", "PATCH_MGR", f"Software patch executed for {payload.package_id}: {res['status']}")
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Software patch failed: {exc}")
+
+@app.get("/api/safemoney/sites")
+def get_safe_money_sites():
+    return {"sites": kaspersky_suite.SAFE_MONEY_SUGGESTED_SITES}
+
+@app.post("/api/safemoney/launch")
+def launch_safe_money(payload: SafeMoneyLaunchRequest):
+    verdict = check_url(CheckUrlRequest(url=payload.url))
+    if verdict["status"] == "DANGEROUS":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Safe Money BLOCKED phishing/malicious URL '{verdict['domain']}' (Risk {verdict['risk_score']}/100)."
+        )
+    try:
+        res = kaspersky_suite.launch_safe_money_browser(payload.url)
+        log_event("SUCCESS", "SAFE_MONEY", f"Launched isolated Safe Money session for {res['url']} ({res['isolation_mode']})")
+        return {"safe_money": res, "url_verdict": verdict}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+@app.get("/api/download/browser-extension")
+def download_browser_extension_zip():
+    """Packages the SentinelGrid Web & Safe Money Shield Chrome/Edge MV3 extension as a ZIP."""
+    import io
+    import zipfile
+    from starlette.responses import StreamingResponse
+
+    ext_dir = os.path.abspath(os.path.join(BASE_DIR, "..", "extension"))
+    if not os.path.exists(ext_dir):
+        raise HTTPException(status_code=404, detail="Browser extension folder not found.")
+
+    mem_zip = io.BytesIO()
+    with zipfile.ZipFile(mem_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname in os.listdir(ext_dir):
+            fpath = os.path.join(ext_dir, fname)
+            if os.path.isfile(fpath):
+                zf.write(fpath, arcname=f"sentinelgrid-web-shield/{fname}")
+    mem_zip.seek(0)
+    return StreamingResponse(
+        mem_zip,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=SentinelGrid_Web_Shield_Extension.zip"},
+    )
 
 # ==================== CENTRALIZED AUDIT LOGGER ====================
 ADMIN_EMAIL_LOWER = "bmwm25320@gmail.com"

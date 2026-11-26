@@ -52,6 +52,49 @@ export interface AndroidBoostMemoryResult {
   totalMemoryMb: number;
 }
 
+export interface AndroidPhishingAlert {
+  sourceApp: string;
+  url: string;
+  status: string;
+  riskScore: number;
+  timestamp: number;
+}
+
+export interface AndroidNotificationShieldStatus {
+  permissionGranted: boolean;
+  serviceConnected: boolean;
+  alerts: AndroidPhishingAlert[];
+}
+
+export interface AndroidAppLockStatus {
+  hasUsageStatsPermission: boolean;
+  serviceRunning: boolean;
+  lockedPackages: string[];
+}
+
+export interface AndroidLocationResult {
+  available: boolean;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  note?: string;
+}
+
+export interface AndroidDeviceTelemetry {
+  manufacturer: string;
+  model: string;
+  androidVersion: string;
+  sdkInt: number;
+  cpuCores: number;
+  memoryTotalMb: number;
+  memoryUsedMb: number;
+  memoryAvailMb: number;
+  memoryPercent: number;
+  diskTotalGb: number;
+  diskFreeGb: number;
+  installedPackagesCount: number;
+}
+
 export interface SentinelDeviceGuardPlugin {
   scanInstalledApps(): Promise<AndroidAppScanResult>;
   inspectWifiSecurity(): Promise<AndroidWifiStatus>;
@@ -67,6 +110,16 @@ export interface SentinelDeviceGuardPlugin {
   startBackgroundGemini(options: { apiKey?: string }): Promise<{ started: boolean }>;
   stopBackgroundGemini(): Promise<{ stopped: boolean }>;
   boostBackgroundMemory(): Promise<AndroidBoostMemoryResult>;
+  getNotificationShieldStatus(): Promise<AndroidNotificationShieldStatus>;
+  requestNotificationAccess(): Promise<void>;
+  clearPhishingAlerts(): Promise<void>;
+  getAppLockStatus(): Promise<AndroidAppLockStatus>;
+  requestUsageStatsAccess(): Promise<void>;
+  setAppLockConfig(options: { lockedPackages: string[]; pin?: string; enabled: boolean }): Promise<{ savedCount: number; serviceRunning: boolean }>;
+  triggerAntiTheftAlarm(): Promise<{ playing: boolean }>;
+  stopAntiTheftAlarm(): Promise<{ playing: boolean }>;
+  getLastKnownLocation(): Promise<AndroidLocationResult>;
+  getDeviceTelemetry(): Promise<AndroidDeviceTelemetry>;
 }
 
 export const SentinelDeviceGuard = registerPlugin<SentinelDeviceGuardPlugin>('SentinelDeviceGuard');

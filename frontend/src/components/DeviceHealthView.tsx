@@ -13,8 +13,20 @@ import {
   CheckSquare,
   Square,
   Trash2,
+  PackageCheck,
+  Power,
+  AlertOctagon,
 } from 'lucide-react';
-import type { DeviceAudit, Telemetry, ProcessItem, StartupItem, RamDiagnostics } from '../types';
+import type {
+  DeviceAudit,
+  Telemetry,
+  ProcessItem,
+  StartupItem,
+  RamDiagnostics,
+  DiskJunkScanResult,
+  ManagedStartupItem,
+  SoftwareScanResult,
+} from '../types';
 import { api } from '../api';
 import { SentinelDeviceGuard, isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
@@ -38,12 +50,126 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
   const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const [isOptimizingRam, setIsOptimizingRam] = useState(false);
   const [ramOptimizeResult, setRamOptimizeResult] = useState<string | null>(null);
+  const [junkScan, setJunkScan] = useState<DiskJunkScanResult | null>(null);
+  const [isScanningJunk, setIsScanningJunk] = useState(false);
+  const [isCleaningJunk, setIsCleaningJunk] = useState(false);
+  const [junkNotice, setJunkNotice] = useState<string | null>(null);
+  const [managedStartup, setManagedStartup] = useState<ManagedStartupItem[]>([]);
+  const [togglingStartup, setTogglingStartup] = useState<string | null>(null);
+  const [bootAutoStart, setBootAutoStart] = useState(false);
+  const [togglingBoot, setTogglingBoot] = useState(false);
+  const [softwareScan, setSoftwareScan] = useState<SoftwareScanResult | null>(null);
+  const [isScanningSoftware, setIsScanningSoftware] = useState(false);
+  const [patchingPkgId, setPatchingPkgId] = useState<string | null>(null);
+  const [softwareNotice, setSoftwareNotice] = useState<string | null>(null);
   const isAndroidApp = isAndroidNativeApp();
 
   useEffect(() => {
     loadDndStatus();
     loadRamDiagnostics();
+    if (!isAndroidApp) {
+      loadKasperskySuitePanels();
+    }
   }, []);
+
+  const loadKasperskySuitePanels = async () => {
+    try {
+      const [junkRes, startupRes, bootRes, swRes] = await Promise.allSettled([
+        api.scanDiskJunk(),
+        api.listStartupApps(),
+        api.getBootPersistence(),
+        api.scanSoftwareVulnerabilities(false),
+      ]);
+      if (junkRes.status === 'fulfilled') setJunkScan(junkRes.value);
+      if (startupRes.status === 'fulfilled') setManagedStartup(startupRes.value.entries || []);
+      if (bootRes.status === 'fulfilled') setBootAutoStart(Boolean(bootRes.value.enabled));
+      if (swRes.status === 'fulfilled') setSoftwareScan(swRes.value);
+    } catch {
+      // Ignore transient startup load errors
+    }
+  };
+
+  const handleScanJunk = async () => {
+    setIsScanningJunk(true);
+    setJunkNotice(null);
+    try {
+      const res = await api.scanDiskJunk();
+      setJunkScan(res);
+    } catch (e: any) {
+      setJunkNotice(`Junk scan note: ${e.message}`);
+    } finally {
+      setIsScanningJunk(false);
+    }
+  };
+
+  const handleCleanJunk = async () => {
+    setIsCleaningJunk(true);
+    setJunkNotice(null);
+    try {
+      const res = await api.cleanDiskJunk();
+      setJunkNotice(`Cleaned ${res.deleted_files} junk files · Freed ${res.freed_mb} MB disk space!`);
+      const fresh = await api.scanDiskJunk();
+      setJunkScan(fresh);
+      onRefreshData();
+    } catch (e: any) {
+      setJunkNotice(`Cleanup note: ${e.message}`);
+    } finally {
+      setIsCleaningJunk(false);
+    }
+  };
+
+  const handleToggleStartup = async (name: string, nextEnabled: boolean) => {
+    setTogglingStartup(name);
+    try {
+      await api.toggleStartupApp(name, nextEnabled);
+      const res = await api.listStartupApps();
+      setManagedStartup(res.entries || []);
+    } catch (e: any) {
+      setNotice(`Startup toggle failed: ${e.message}`);
+    } finally {
+      setTogglingStartup(null);
+    }
+  };
+
+  const handleToggleBootAutoStart = async () => {
+    setTogglingBoot(true);
+    try {
+      const res = await api.setBootPersistence(!bootAutoStart);
+      setBootAutoStart(res.enabled);
+    } catch (e: any) {
+      setNotice(`Boot persistence note: ${e.message}`);
+    } finally {
+      setTogglingBoot(false);
+    }
+  };
+
+  const handleRefreshSoftwareVulns = async () => {
+    setIsScanningSoftware(true);
+    setSoftwareNotice(null);
+    try {
+      const res = await api.scanSoftwareVulnerabilities(true);
+      setSoftwareScan(res);
+    } catch (e: any) {
+      setSoftwareNotice(`Vulnerability scan note: ${e.message}`);
+    } finally {
+      setIsScanningSoftware(false);
+    }
+  };
+
+  const handlePatchPackage = async (pkgId: string) => {
+    setPatchingPkgId(pkgId);
+    setSoftwareNotice(null);
+    try {
+      const res = await api.patchSoftwarePackage(pkgId);
+      setSoftwareNotice(`${pkgId}: ${res.message || res.status}`);
+      const fresh = await api.scanSoftwareVulnerabilities(true);
+      setSoftwareScan(fresh);
+    } catch (e: any) {
+      setSoftwareNotice(`Patch failed for ${pkgId}: ${e.message}`);
+    } finally {
+      setPatchingPkgId(null);
+    }
+  };
 
   const loadRamDiagnostics = async () => {
     try {
@@ -92,6 +218,8 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
         setRamOptimizeResult(
           `Android Boost: Cleared ${res.killedPackagesCount} background apps · Freed ${res.freedMb} MB RAM (${res.availableAfterMb} MB free).`
         );
+        await loadRamDiagnostics();
+        onRefreshData();
         return;
       }
       const res = await api.killUselessBackgroundApps();
@@ -133,6 +261,8 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
         setRamOptimizeResult(
           `Android Boost: Cleared ${res.killedPackagesCount} background apps · Freed ${res.freedMb} MB RAM!`
         );
+        await loadRamDiagnostics();
+        onRefreshData();
         return;
       }
       const res = await api.optimizeRam(
@@ -504,6 +634,153 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
         </button>
       </div>
 
+      {/* Windows Boot Auto-Start + Disk Junk Cleaner */}
+      {!isAndroidApp && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Disk Junk & Cache Cleaner */}
+          <div className="defender-card p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#1F2937]">
+              <div className="flex items-center gap-2">
+                <HardDrive className="w-4 h-4 text-amber-400" />
+                <div>
+                  <h3 className="text-xs font-semibold text-white">Disk Junk &amp; Browser Cache Cleaner</h3>
+                  <p className="text-[11px] text-slate-400">Reclaim storage from stale Temp files, Edge/Chrome cache &amp; dumps</p>
+                </div>
+              </div>
+              <button
+                onClick={handleScanJunk}
+                disabled={isScanningJunk}
+                className="p-1.5 rounded-lg bg-[#0D121D] border border-[#1F2937] text-slate-300 hover:text-white"
+                title="Re-scan Disk Junk"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isScanningJunk ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            {junkScan ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs bg-[#0D121D] border border-[#1F2937] rounded-xl p-3">
+                  <div>
+                    <div className="text-[11px] text-slate-400">Reclaimable Safe Junk</div>
+                    <div className="text-lg font-bold text-amber-400">
+                      {junkScan.total_mb} MB <span className="text-xs font-normal text-slate-400">({junkScan.total_files} files)</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCleanJunk}
+                    disabled={isCleaningJunk || junkScan.total_files === 0}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isCleaningJunk ? 'Cleaning...' : 'Clean All Junk'}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                  {junkScan.categories.map((cat) => (
+                    <div key={cat.id} className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-lg bg-[#0D121D] border border-[#1F2937]/80">
+                      <span className="text-slate-300 truncate">{cat.label}</span>
+                      <span className="font-mono text-slate-400 shrink-0">{cat.size_mb} MB · {cat.file_count} files</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 py-3">Scanning Windows Temp &amp; browser caches...</p>
+            )}
+
+            {junkNotice && (
+              <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-300">
+                {junkNotice}
+              </div>
+            )}
+          </div>
+
+          {/* Software Vulnerability Scanner & 1-Click Patcher + Boot Guard */}
+          <div className="defender-card p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-[#1F2937]">
+              <div className="flex items-center gap-2">
+                <PackageCheck className="w-4 h-4 text-cyan-400" />
+                <div>
+                  <h3 className="text-xs font-semibold text-white">Software Vulnerability Scanner (Winget)</h3>
+                  <p className="text-[11px] text-slate-400">Detects outdated browsers/runtimes with known CVEs &amp; patches silently</p>
+                </div>
+              </div>
+              <button
+                onClick={handleRefreshSoftwareVulns}
+                disabled={isScanningSoftware}
+                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-semibold flex items-center gap-1"
+              >
+                <RotateCw className={`w-3 h-3 ${isScanningSoftware ? 'animate-spin' : ''}`} />
+                <span>{isScanningSoftware ? 'Scanning...' : 'Check Updates'}</span>
+              </button>
+            </div>
+
+            {softwareScan ? (
+              softwareScan.packages.length === 0 ? (
+                <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>All monitored installed apps appear up to date ({softwareScan.winget_available ? 'Winget verified' : 'Offline check'}).</span>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {softwareScan.packages.slice(0, 8).map((pkg) => (
+                    <div key={pkg.id} className="p-2 rounded-lg bg-[#0D121D] border border-[#1F2937] flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${pkg.severity === 'HIGH' ? 'bg-red-950 text-red-300 border border-red-500/30' : 'bg-amber-950 text-amber-300 border border-amber-500/30'}`}>
+                            {pkg.severity}
+                          </span>
+                          <span className="font-semibold text-white truncate">{pkg.name}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono truncate">
+                          {pkg.current_version} -&gt; {pkg.available_version}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handlePatchPackage(pkg.id)}
+                        disabled={patchingPkgId === pkg.id}
+                        className="px-2.5 py-1 rounded bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] shrink-0 disabled:opacity-50"
+                      >
+                        {patchingPkgId === pkg.id ? 'Patching...' : 'Patch Now'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              <p className="text-xs text-slate-400 py-2">Click "Check Updates" to scan installed software versions.</p>
+            )}
+
+            {softwareNotice && (
+              <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-500/30 text-[11px] text-cyan-200">
+                {softwareNotice}
+              </div>
+            )}
+
+            {/* Boot Auto-Start Persistence Toggle */}
+            <div className="pt-2 border-t border-[#1F2937] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs">
+                <Power className={`w-3.5 h-3.5 ${bootAutoStart ? 'text-emerald-400' : 'text-slate-400'}`} />
+                <div>
+                  <div className="font-medium text-white">Launch SentinelGrid on Windows Boot</div>
+                  <div className="text-[10px] text-slate-400">Arms real-time &amp; Gemini background shields at sign-in</div>
+                </div>
+              </div>
+              <button
+                onClick={handleToggleBootAutoStart}
+                disabled={togglingBoot}
+                className={`w-11 h-5 rounded-full transition-colors relative shrink-0 p-0.5 ${
+                  bootAutoStart ? 'bg-emerald-500' : 'bg-slate-700'
+                }`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${bootAutoStart ? 'translate-x-6' : 'translate-x-0'}`} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Windows Security Posture Check */}
       <div className="defender-card p-5 space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
@@ -541,17 +818,56 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
         </div>
       </div>
 
-      {/* Startup Applications */}
+      {/* Startup Applications (Interactive Control) */}
       <div className="defender-card p-5 space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-[#1F2937]">
           <div>
-            <h3 className="text-xs font-semibold text-white">Startup Applications</h3>
-            <p className="text-xs text-slate-400">Programs configured to start automatically when Windows boots</p>
+            <h3 className="text-xs font-semibold text-white">Startup Applications (Reversible Boot Optimizer)</h3>
+            <p className="text-xs text-slate-400">Enable or disable third-party apps from auto-starting with Windows</p>
           </div>
-          <span className="text-xs text-slate-400">{startupItems.length} apps monitored</span>
+          <span className="text-xs text-slate-400">
+            {managedStartup.length > 0 ? managedStartup.length : startupItems.length} apps monitored
+          </span>
         </div>
 
-        {startupItems.length === 0 ? (
+        {managedStartup.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {managedStartup.map((item) => (
+              <div
+                key={item.name}
+                className={`p-3 rounded-xl bg-[#0D121D] border flex items-center justify-between gap-3 text-xs ${
+                  item.suspicious ? 'border-red-500/40' : 'border-[#1F2937]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${item.enabled ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                  <div className="truncate">
+                    <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                      <span>{item.name}</span>
+                      {item.suspicious && <AlertOctagon className="w-3 h-3 text-red-400 shrink-0" />}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate">{item.command}</div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleToggleStartup(item.name, !item.enabled)}
+                  disabled={item.protected || togglingStartup === item.name}
+                  className={`text-[10px] px-2.5 py-1 rounded font-semibold border shrink-0 transition-colors ${
+                    item.protected
+                      ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30 cursor-not-allowed'
+                      : item.enabled
+                      ? 'bg-emerald-500/15 hover:bg-red-500/20 text-emerald-300 hover:text-red-300 border-emerald-500/30'
+                      : 'bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border-slate-700'
+                  }`}
+                  title={item.protected ? 'Protected core security control' : 'Click to toggle Windows startup'}
+                >
+                  {item.protected ? 'Protected' : togglingStartup === item.name ? '...' : item.enabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : startupItems.length === 0 ? (
           <p className="text-xs text-slate-400 text-center py-4">No third-party startup applications registered.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

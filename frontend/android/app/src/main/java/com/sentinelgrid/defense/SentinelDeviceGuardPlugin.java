@@ -1,26 +1,41 @@
 package com.sentinelgrid.defense;
 
+import android.Manifest;
 import android.app.ActivityManager;
+import android.app.AppOpsManager;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.media.AudioManager;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
 import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.os.Process;
+import android.os.StatFs;
 import android.provider.Settings;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -29,9 +44,27 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-@CapacitorPlugin(name = "SentinelDeviceGuard")
+@CapacitorPlugin(
+    name = "SentinelDeviceGuard",
+    permissions = {
+        @Permission(
+            strings = {
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            },
+            alias = "location"
+        ),
+        @Permission(
+            strings = { "android.permission.POST_NOTIFICATIONS" },
+            alias = "notifications"
+        )
+    }
+)
 public class SentinelDeviceGuardPlugin extends Plugin {
 
     private static final Set<String> TRUSTED_INSTALLERS = new HashSet<>(Arrays.asList(
@@ -388,8 +421,16 @@ public class SentinelDeviceGuardPlugin extends Plugin {
             return plan;
         }
 
+        if (q.contains("slow") || q.contains("ram") || q.contains("boost") || q.contains("clean") || q.contains("speed") || q.contains("battery")) {
+            plan.analysis = "Ready to optimize Android memory and stop idle background apps. Choose an option:";
+            plan.options.add(new AndroidTaskOption("opt_boost", "Boost RAM & Stop Bloat", "Clears background processes safely", "BOOST_RAM", ""));
+            plan.options.add(new AndroidTaskOption("opt_scan", "Audit Installed APKs", "Checks sideloaded or draining apps", "SCAN_APPS", ""));
+            return plan;
+        }
+
         plan.analysis = "Gemini Background Co-Pilot is ready across apps. Select an action to execute:";
         plan.options.add(new AndroidTaskOption("opt_scan", "Scan Installed Apps & Stalkerware", "Audits sideloaded APKs & toxic permissions", "SCAN_APPS", ""));
+        plan.options.add(new AndroidTaskOption("opt_boost", "Boost RAM & Clear Background Apps", "Frees phone memory safely", "BOOST_RAM", ""));
         plan.options.add(new AndroidTaskOption("opt_wifi", "Check Wi-Fi & DNS Security", "Inspects active connection safety", "CHECK_WIFI", ""));
         plan.options.add(new AndroidTaskOption("opt_open", "Open Full SentinelGrid Suite", "Launches Vault, Breach Audit & Shields", "OPEN_APP", ""));
         return plan;
@@ -427,6 +468,13 @@ public class SentinelDeviceGuardPlugin extends Plugin {
             call.reject("OVERLAY_PERMISSION_REQUIRED");
             return;
         }
+        SharedPreferences prefs = ctx.getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
+        SharedPreferences.Editor ed = prefs.edit().putBoolean(GeminiOverlayService.KEY_GEMINI_BG_ENABLED, true);
+        if (apiKey != null && !apiKey.trim().isEmpty()) {
+            ed.putString(GeminiOverlayService.KEY_GEMINI_API_KEY, apiKey.trim());
+        }
+        ed.apply();
+
         Intent serviceIntent = new Intent(ctx, GeminiOverlayService.class);
         serviceIntent.putExtra(GeminiOverlayService.EXTRA_API_KEY, apiKey);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -442,6 +490,10 @@ public class SentinelDeviceGuardPlugin extends Plugin {
     @PluginMethod
     public void stopBackgroundGemini(PluginCall call) {
         Context ctx = getContext();
+        ctx.getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(GeminiOverlayService.KEY_GEMINI_BG_ENABLED, false)
+            .apply();
         ctx.stopService(new Intent(ctx, GeminiOverlayService.class));
         JSObject res = new JSObject();
         res.put("stopped", true);
@@ -503,5 +555,305 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         res.put("freedMb", freedMb);
         res.put("totalMemoryMb", totalMb);
         call.resolve(res);
+    }
+
+    // ==================== SAFE MESSAGING URL EXTRACTOR & PHISHING SHIELD ====================
+
+    private static final Pattern URL_PATTERN = Pattern.compile(
+        "(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=%]+)",
+        Pattern.CASE_INSENSITIVE
+    );
+
+    private static Ringtone activeAlarmRingtone = null;
+
+    public static List<String> extractUrlsFromText(String text) {
+        List<String> urls = new ArrayList<>();
+        if (text == null || text.isEmpty()) return urls;
+        Matcher m = URL_PATTERN.matcher(text);
+        while (m.find()) {
+            urls.add(m.group(1));
+        }
+        return urls;
+    }
+
+    public static boolean isAppLockTarget(
+        String pkg,
+        Set<String> lockedPackages,
+        Map<String, Long> temporaryUnlocks,
+        long nowMs
+    ) {
+        if (pkg == null || lockedPackages == null || !lockedPackages.contains(pkg)) return false;
+        if (temporaryUnlocks != null && temporaryUnlocks.containsKey(pkg)) {
+            Long expires = temporaryUnlocks.get(pkg);
+            if (expires != null && expires > nowMs) return false;
+        }
+        return true;
+    }
+
+    @PluginMethod
+    public void getNotificationShieldStatus(PluginCall call) {
+        Context ctx = getContext();
+        String enabledListeners = Settings.Secure.getString(
+            ctx.getContentResolver(),
+            "enabled_notification_listeners"
+        );
+        ComponentName cn = new ComponentName(ctx, NotificationPhishingService.class);
+        boolean permGranted = enabledListeners != null && enabledListeners.contains(cn.flattenToString());
+
+        SharedPreferences prefs = ctx.getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
+        JSArray alertsArr;
+        try {
+            alertsArr = new JSArray(prefs.getString(NotificationPhishingService.KEY_ALERTS, "[]"));
+        } catch (Exception e) {
+            alertsArr = new JSArray();
+        }
+
+        JSObject res = new JSObject();
+        res.put("permissionGranted", permGranted);
+        res.put("serviceConnected", NotificationPhishingService.isConnected);
+        res.put("alerts", alertsArr);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void requestNotificationAccess(PluginCall call) {
+        Intent i = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearPhishingAlerts(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit().putString(NotificationPhishingService.KEY_ALERTS, "[]").apply();
+        call.resolve();
+    }
+
+    // ==================== BIOMETRIC APP LOCK ====================
+
+    private boolean hasUsageStatsPermission(Context ctx) {
+        try {
+            AppOpsManager appOps = (AppOpsManager) ctx.getSystemService(Context.APP_OPS_SERVICE);
+            if (appOps == null) return false;
+            int mode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                ? appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.getPackageName())
+                : appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.getPackageName());
+            return mode == AppOpsManager.MODE_ALLOWED;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @PluginMethod
+    public void getAppLockStatus(PluginCall call) {
+        Context ctx = getContext();
+        SharedPreferences prefs = ctx.getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
+        String csv = prefs.getString(AppLockService.KEY_LOCKED_APPS, "");
+        JSArray lockedArr = new JSArray();
+        for (String p : csv.split(",")) {
+            if (!p.trim().isEmpty()) lockedArr.put(p.trim());
+        }
+        JSObject res = new JSObject();
+        res.put("hasUsageStatsPermission", hasUsageStatsPermission(ctx));
+        res.put("serviceRunning", AppLockService.isRunning);
+        res.put("lockedPackages", lockedArr);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void requestUsageStatsAccess(PluginCall call) {
+        Intent i = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setAppLockConfig(PluginCall call) {
+        Context ctx = getContext();
+        JSArray pkgs = call.getArray("lockedPackages", new JSArray());
+        String pin = call.getString("pin", "1234");
+        boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", true));
+
+        List<String> list = new ArrayList<>();
+        try {
+            for (int i = 0; i < pkgs.length(); i++) {
+                String val = pkgs.getString(i);
+                if (val != null && !val.trim().isEmpty()) list.add(val.trim());
+            }
+        } catch (Exception ignored) {
+        }
+
+        SharedPreferences prefs = ctx.getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
+        prefs.edit()
+            .putString(AppLockService.KEY_LOCKED_APPS, String.join(",", list))
+            .putString(AppLockService.KEY_LOCK_PIN, pin != null && !pin.isEmpty() ? pin : "1234")
+            .putBoolean(AppLockService.KEY_LOCK_ENABLED, enabled)
+            .apply();
+
+        Intent serviceIntent = new Intent(ctx, AppLockService.class);
+        if (enabled && hasUsageStatsPermission(ctx)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(serviceIntent);
+            } else {
+                ctx.startService(serviceIntent);
+            }
+        } else if (!enabled) {
+            ctx.stopService(serviceIntent);
+        }
+
+        JSObject res = new JSObject();
+        res.put("savedCount", list.size());
+        res.put("serviceRunning", enabled && hasUsageStatsPermission(ctx));
+        call.resolve(res);
+    }
+
+    // ==================== ANTI-THEFT SIREN ALARM & LAST LOCATION ====================
+
+    @PluginMethod
+    public void triggerAntiTheftAlarm(PluginCall call) {
+        Context ctx = getContext();
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            if (am != null) {
+                int maxVol = am.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+                am.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0);
+            }
+            Uri alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (alarmUri == null) alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+            if (activeAlarmRingtone != null && activeAlarmRingtone.isPlaying()) {
+                activeAlarmRingtone.stop();
+            }
+            activeAlarmRingtone = RingtoneManager.getRingtone(ctx, alarmUri);
+            if (activeAlarmRingtone != null) {
+                activeAlarmRingtone.play();
+            }
+            JSObject res = new JSObject();
+            res.put("playing", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.reject("Could not trigger alarm: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void stopAntiTheftAlarm(PluginCall call) {
+        try {
+            if (activeAlarmRingtone != null && activeAlarmRingtone.isPlaying()) {
+                activeAlarmRingtone.stop();
+            }
+            JSObject res = new JSObject();
+            res.put("playing", false);
+            call.resolve(res);
+        } catch (Exception e) {
+            call.resolve(new JSObject().put("playing", false));
+        }
+    }
+
+    @PluginMethod
+    public void getDeviceTelemetry(PluginCall call) {
+        Context ctx = getContext();
+        JSObject res = new JSObject();
+
+        long totalMb = 4096;
+        long availMb = 1536;
+        try {
+            ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                totalMb = Math.max(512, mi.totalMem / (1024 * 1024));
+                availMb = mi.availMem / (1024 * 1024);
+            }
+        } catch (Exception ignored) {}
+
+        long usedMb = Math.max(0, totalMb - availMb);
+        double ramPercent = Math.round((usedMb * 1000.0) / totalMb) / 10.0;
+
+        double totalDiskGb = 64.0;
+        double freeDiskGb = 32.0;
+        try {
+            StatFs stat = new StatFs(Environment.getDataDirectory().getPath());
+            long blockSize = stat.getBlockSizeLong();
+            long totalBlocks = stat.getBlockCountLong();
+            long availBlocks = stat.getAvailableBlocksLong();
+            totalDiskGb = Math.round((totalBlocks * blockSize) / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+            freeDiskGb = Math.round((availBlocks * blockSize) / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
+        } catch (Exception ignored) {}
+
+        int packageCount = 0;
+        try {
+            packageCount = ctx.getPackageManager().getInstalledApplications(0).size();
+        } catch (Exception ignored) {}
+
+        res.put("manufacturer", Build.MANUFACTURER);
+        res.put("model", Build.MODEL);
+        res.put("androidVersion", Build.VERSION.RELEASE);
+        res.put("sdkInt", Build.VERSION.SDK_INT);
+        res.put("cpuCores", Runtime.getRuntime().availableProcessors());
+        res.put("memoryTotalMb", totalMb);
+        res.put("memoryUsedMb", usedMb);
+        res.put("memoryAvailMb", availMb);
+        res.put("memoryPercent", ramPercent);
+        res.put("diskTotalGb", totalDiskGb);
+        res.put("diskFreeGb", freeDiskGb);
+        res.put("installedPackagesCount", packageCount);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void getLastKnownLocation(PluginCall call) {
+        if (getPermissionState("location") != PermissionState.GRANTED) {
+            requestPermissionForAlias("location", call, "locationPermsCallback");
+            return;
+        }
+        resolveLocationNow(call);
+    }
+
+    @PermissionCallback
+    private void locationPermsCallback(PluginCall call) {
+        if (getPermissionState("location") == PermissionState.GRANTED) {
+            resolveLocationNow(call);
+        } else {
+            JSObject res = new JSObject();
+            res.put("available", false);
+            res.put("note", "Location permission denied. Grant Location permission in Android Settings for Anti-Theft GPS.");
+            call.resolve(res);
+        }
+    }
+
+    private void resolveLocationNow(PluginCall call) {
+        Context ctx = getContext();
+        try {
+            LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
+            if (lm == null) {
+                call.resolve(new JSObject().put("available", false));
+                return;
+            }
+            Location best = null;
+            for (String provider : Arrays.asList(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)) {
+                try {
+                    Location loc = lm.getLastKnownLocation(provider);
+                    if (loc != null && (best == null || loc.getTime() > best.getTime())) {
+                        best = loc;
+                    }
+                } catch (SecurityException ignored) {
+                }
+            }
+            JSObject res = new JSObject();
+            if (best != null) {
+                res.put("available", true);
+                res.put("latitude", best.getLatitude());
+                res.put("longitude", best.getLongitude());
+                res.put("accuracyMeters", best.getAccuracy());
+            } else {
+                res.put("available", false);
+                res.put("note", "Location enabled, waiting for first GPS fix (turn on Device Location/GPS in Quick Settings).");
+            }
+            call.resolve(res);
+        } catch (Exception e) {
+            call.resolve(new JSObject().put("available", false));
+        }
     }
 }
