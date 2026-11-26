@@ -44,6 +44,14 @@ export interface AndroidOverlayStatus {
   serviceRunning: boolean;
 }
 
+export interface AndroidBoostMemoryResult {
+  killedPackagesCount: number;
+  availableBeforeMb: number;
+  availableAfterMb: number;
+  freedMb: number;
+  totalMemoryMb: number;
+}
+
 export interface SentinelDeviceGuardPlugin {
   scanInstalledApps(): Promise<AndroidAppScanResult>;
   inspectWifiSecurity(): Promise<AndroidWifiStatus>;
@@ -58,6 +66,7 @@ export interface SentinelDeviceGuardPlugin {
   requestOverlayPermission(): Promise<void>;
   startBackgroundGemini(options: { apiKey?: string }): Promise<{ started: boolean }>;
   stopBackgroundGemini(): Promise<{ stopped: boolean }>;
+  boostBackgroundMemory(): Promise<AndroidBoostMemoryResult>;
 }
 
 export const SentinelDeviceGuard = registerPlugin<SentinelDeviceGuardPlugin>('SentinelDeviceGuard');

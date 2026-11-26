@@ -53,6 +53,8 @@ from active_defense import (
     clear_windows_clipboard,
     detect_removable_drives,
     scan_usb_drive_path,
+    classify_background_process,
+    trim_system_working_sets,
 )
 
 PROTECTED_ZONE = os.path.join(BASE_DIR, "protected_zone")
@@ -1171,6 +1173,9 @@ class DndRequest(BaseModel):
 
 class RamOptimizeRequest(BaseModel):
     pids: Optional[List[int]] = None
+    process_names: Optional[List[str]] = None
+    kill_all_bloat: Optional[bool] = False
+    trim_working_sets: Optional[bool] = True
 
 class VaultEntry(BaseModel):
     id: Optional[str] = None
@@ -2158,7 +2163,12 @@ def get_ram_diagnostics():
     percent = vm.percent
 
     family_pids = get_current_family_pids()
+    fg_info = gemini_copilot.active_app_state.get("current_app") or {}
+    fg_pid = fg_info.get("pid") or 0
+
     top_apps = []
+    grouped_map: Dict[str, Dict[str, Any]] = {}
+
     for proc in psutil.process_iter(['pid', 'name', 'memory_info']):
         try:
             info = proc.info
@@ -2169,37 +2179,58 @@ def get_ram_diagnostics():
             pid = info.get('pid')
 
             # Skip core OS, dev servers, and SentinelGrid UI / WebView2 processes
-            if is_protected_process(p_name, pid, family_pids):
+            protected = is_protected_process(p_name, pid, family_pids)
+            if protected:
                 continue
 
             mem_info = info.get('memory_info')
             if not mem_info:
                 continue
             mem_mb = round(mem_info.rss / (1024 * 1024), 1)
-            if mem_mb < 15:
+            if mem_mb < 10:
                 continue
 
-            # Only mark as can_safely_close if it is truly a safe user app and NOT part of SentinelGrid
-            is_safe = (
-                not is_protected_process(p_name, pid, family_pids) and (
-                    p_name_lower in SAFE_USER_APPS
-                    or any(b in p_name_lower for b in ['discord', 'slack', 'teams', 'spotify', 'steam', 'zoom', 'calculator', 'notepad'])
-                )
-            )
-            category = SAFE_USER_APPS.get(p_name_lower, "Background User Application" if is_safe else "Active Process")
+            is_foreground = (pid == fg_pid)
+            classification = classify_background_process(p_name, protected, is_foreground)
+            is_safe = classification["can_safely_close"]
+            is_bloat = classification["is_useless_bloat"]
+            category = classification["category"]
 
             top_apps.append({
                 "pid": pid,
                 "name": p_name,
                 "memory_mb": mem_mb,
                 "can_safely_close": is_safe,
+                "is_useless_bloat": is_bloat,
                 "category": category
             })
+
+            if p_name_lower not in grouped_map:
+                grouped_map[p_name_lower] = {
+                    "name": p_name,
+                    "pids": [],
+                    "instance_count": 0,
+                    "total_memory_mb": 0.0,
+                    "can_safely_close": is_safe,
+                    "is_useless_bloat": is_bloat,
+                    "category": category,
+                }
+            grp = grouped_map[p_name_lower]
+            grp["pids"].append(pid)
+            grp["instance_count"] += 1
+            grp["total_memory_mb"] = round(grp["total_memory_mb"] + mem_mb, 1)
+            if is_foreground:
+                grp["can_safely_close"] = False
+                grp["is_useless_bloat"] = False
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
     top_apps.sort(key=lambda x: x['memory_mb'], reverse=True)
+    grouped_apps = sorted(grouped_map.values(), key=lambda x: x['total_memory_mb'], reverse=True)
+
     reclaimable = sum(a['memory_mb'] for a in top_apps if a['can_safely_close'])
+    useless_bloat_mb = sum(a['memory_mb'] for a in top_apps if a['is_useless_bloat'])
+    useless_bloat_count = sum(1 for a in grouped_apps if a['is_useless_bloat'])
 
     return {
         "total_gb": total_gb,
@@ -2207,25 +2238,43 @@ def get_ram_diagnostics():
         "available_gb": available_gb,
         "percent": percent,
         "recommended_reclaim_mb": round(reclaimable, 1),
+        "useless_bloat_mb": round(useless_bloat_mb, 1),
+        "useless_bloat_count": useless_bloat_count,
         "safe_count": sum(1 for a in top_apps if a['can_safely_close']),
-        "top_apps": top_apps[:25]
+        "top_apps": top_apps[:35],
+        "grouped_apps": grouped_apps[:25],
     }
 
 @app.post("/api/ram/optimize")
 def optimize_ram(payload: RamOptimizeRequest):
-    pids_to_close = payload.pids or []
-    closed_pids = []
-    closed_names = []
+    vm_before = psutil.virtual_memory()
+    pids_to_close: List[int] = list(payload.pids or [])
+    target_names_lower = {n.strip().lower() for n in (payload.process_names or []) if n.strip()}
+    closed_pids: List[int] = []
+    closed_names: List[str] = []
     reclaimed_mb = 0.0
     family_pids = get_current_family_pids()
 
-    if not pids_to_close:
-        diag = get_ram_diagnostics()
-        pids_to_close = [a['pid'] for a in diag['top_apps'] if a['can_safely_close']][:6]
+    fg_info = gemini_copilot.active_app_state.get("current_app") or {}
+    fg_pid = fg_info.get("pid") or 0
 
+    diag = get_ram_diagnostics()
+    if payload.kill_all_bloat:
+        pids_to_close = [a['pid'] for a in diag['top_apps'] if a.get('is_useless_bloat')]
+        if not pids_to_close:
+            pids_to_close = [a['pid'] for a in diag['top_apps'] if a.get('can_safely_close')]
+    elif target_names_lower:
+        for a in diag['top_apps']:
+            if (a.get('name') or '').lower() in target_names_lower and a.get('can_safely_close'):
+                pids_to_close.append(a['pid'])
+    elif not pids_to_close:
+        pids_to_close = [a['pid'] for a in diag['top_apps'] if a['can_safely_close']][:12]
+
+    seen_pids = set()
     for pid in pids_to_close:
-        if is_protected_process(None, pid, family_pids):
+        if pid in seen_pids or pid == fg_pid or is_protected_process(None, pid, family_pids):
             continue
+        seen_pids.add(pid)
         try:
             p = psutil.Process(pid)
             p_name = p.name()
@@ -2233,32 +2282,74 @@ def optimize_ram(payload: RamOptimizeRequest):
                 continue
             mem = p.memory_info().rss / (1024 * 1024)
             p.terminate()
+            try:
+                p.wait(timeout=0.4)
+            except psutil.TimeoutExpired:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
             closed_pids.append(pid)
             closed_names.append(p_name)
             reclaimed_mb += mem
         except Exception:
             continue
 
-    # Safely trim OS working set to flush inactive memory to standby with zero crash risk
-    try:
-        import ctypes
-        ctypes.windll.kernel32.SetProcessWorkingSetSize(ctypes.c_void_p(-1), ctypes.c_size_t(-1), ctypes.c_size_t(-1))
-    except Exception:
-        pass
+    trimmed_count = 0
+    if payload.trim_working_sets is not False:
+        trimmed_count = trim_system_working_sets(
+            family_pids,
+            lambda pn, pd: is_protected_process(pn, pd, family_pids)
+        )
 
-    vm = psutil.virtual_memory()
-    new_used_gb = round((vm.total - vm.available) / (1024**3), 2)
-    new_percent = vm.percent
+    vm_after = psutil.virtual_memory()
+    os_freed_mb = max(0.0, round((vm_after.available - vm_before.available) / (1024 * 1024), 1))
+    total_reclaimed = max(round(reclaimed_mb, 1), os_freed_mb)
+    new_used_gb = round((vm_after.total - vm_after.available) / (1024**3), 2)
+    new_percent = vm_after.percent
 
-    log_event("SUCCESS", "RAM_OPT", f"Optimized RAM: Freed ~{round(reclaimed_mb, 1)} MB across {len(closed_pids)} background apps.")
+    log_event(
+        "SUCCESS",
+        "RAM_OPT",
+        f"Stopped {len(closed_pids)} background processes & trimmed {trimmed_count} working sets; freed {total_reclaimed} MB RAM."
+    )
 
     return {
         "status": "success",
-        "reclaimed_mb": round(reclaimed_mb, 1),
+        "reclaimed_mb": total_reclaimed,
+        "trimmed_processes_count": trimmed_count,
         "closed_pids": closed_pids,
         "closed_names": closed_names,
         "new_used_gb": new_used_gb,
         "new_percent": new_percent
+    }
+
+@app.post("/api/ram/kill-bloat")
+def kill_useless_background_bloat():
+    """Immediately terminates all detected useless background bloat apps & trims standby RAM."""
+    return optimize_ram(RamOptimizeRequest(kill_all_bloat=True, trim_working_sets=True))
+
+@app.post("/api/ram/trim")
+def trim_standby_ram_only():
+    """Flushes Windows OS working sets across idle processes without closing any user windows."""
+    vm_before = psutil.virtual_memory()
+    family_pids = get_current_family_pids()
+    trimmed = trim_system_working_sets(
+        family_pids,
+        lambda pn, pd: is_protected_process(pn, pd, family_pids)
+    )
+    vm_after = psutil.virtual_memory()
+    freed_mb = max(0.0, round((vm_after.available - vm_before.available) / (1024 * 1024), 1))
+    new_used_gb = round((vm_after.total - vm_after.available) / (1024**3), 2)
+    log_event("SUCCESS", "RAM_TRIM", f"Trimmed working sets across {trimmed} processes; freed {freed_mb} MB standby RAM.")
+    return {
+        "status": "success",
+        "reclaimed_mb": freed_mb,
+        "trimmed_processes_count": trimmed,
+        "closed_pids": [],
+        "closed_names": [],
+        "new_used_gb": new_used_gb,
+        "new_percent": vm_after.percent
     }
 
 # ==================== 5-MINUTE FAST LAPTOP SCAN ====================
@@ -2696,11 +2787,29 @@ def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_task
     log_event("INFO", "GEMINI_COPILOT", f"Executing chosen Co-Pilot option: {action}")
 
     if action == "boost_ram":
-        res = optimize_ram(RamOptimizeRequest(pids=[]))
+        res = optimize_ram(RamOptimizeRequest(pids=[], trim_working_sets=True))
         return {
             "status": "executed",
             "action_type": action,
-            "summary": f"RAM Optimization complete! Safely reclaimed {res['reclaimed_mb']} MB (Memory now at {res['new_percent']}%).",
+            "summary": f"RAM Optimization complete! Stopped {len(res['closed_pids'])} processes, trimmed {res.get('trimmed_processes_count', 0)} working sets, and reclaimed {res['reclaimed_mb']} MB (Memory now at {res['new_percent']}%).",
+            "details": res,
+        }
+
+    if action == "kill_useless_apps":
+        res = kill_useless_background_bloat()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Stopped {len(res['closed_pids'])} useless background bloat processes, trimmed {res.get('trimmed_processes_count', 0)} working sets, and freed {res['reclaimed_mb']} MB RAM (Memory now at {res['new_percent']}%).",
+            "details": res,
+        }
+
+    if action == "trim_ram":
+        res = trim_standby_ram_only()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Standby RAM Trim complete! Flushed working sets across {res['trimmed_processes_count']} processes and freed {res['reclaimed_mb']} MB RAM without closing any open apps.",
             "details": res,
         }
 

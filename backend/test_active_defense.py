@@ -118,6 +118,30 @@ class TestWindowsActiveDefense(unittest.TestCase):
         self.assertEqual(exec_resp.json()["status"], "executed")
         self.assertIn("Privacy Audit", exec_resp.json()["summary"])
 
+    def test_07_useless_background_bloat_killer_and_ram_trim(self):
+        # Verify bloat classifier protects OS/SentinelGrid/foreground while catching bloatware
+        w_res = active_defense.classify_background_process("Widgets.exe", is_protected=False, is_foreground=False)
+        self.assertTrue(w_res["can_safely_close"])
+        self.assertTrue(w_res["is_useless_bloat"])
+
+        fg_res = active_defense.classify_background_process("chrome.exe", is_protected=False, is_foreground=True)
+        self.assertFalse(fg_res["can_safely_close"])
+
+        wv_res = active_defense.classify_background_process("msedgewebview2.exe", is_protected=True, is_foreground=False)
+        self.assertFalse(wv_res["can_safely_close"])
+
+        client = TestClient(engine.app)
+        diag = client.get("/api/ram/diagnostics")
+        self.assertEqual(diag.status_code, 200)
+        d_json = diag.json()
+        self.assertIn("grouped_apps", d_json)
+        self.assertIn("useless_bloat_count", d_json)
+
+        trim = client.post("/api/ram/trim")
+        self.assertEqual(trim.status_code, 200)
+        self.assertEqual(trim.json()["status"], "success")
+        self.assertGreaterEqual(trim.json()["trimmed_processes_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

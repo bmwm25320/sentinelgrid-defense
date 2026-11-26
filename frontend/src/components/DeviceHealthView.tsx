@@ -12,9 +12,11 @@ import {
   Sparkles,
   CheckSquare,
   Square,
+  Trash2,
 } from 'lucide-react';
 import type { DeviceAudit, Telemetry, ProcessItem, StartupItem, RamDiagnostics } from '../types';
 import { api } from '../api';
+import { SentinelDeviceGuard, isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
 interface DeviceHealthViewProps {
   audit: DeviceAudit | null;
@@ -33,9 +35,10 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
   const [dndEnabled, setDndEnabled] = useState(false);
   const [dndLoading, setDndLoading] = useState(false);
   const [ramDiag, setRamDiag] = useState<RamDiagnostics | null>(null);
-  const [selectedPids, setSelectedPids] = useState<number[]>([]);
+  const [selectedApps, setSelectedApps] = useState<string[]>([]);
   const [isOptimizingRam, setIsOptimizingRam] = useState(false);
   const [ramOptimizeResult, setRamOptimizeResult] = useState<string | null>(null);
+  const isAndroidApp = isAndroidNativeApp();
 
   useEffect(() => {
     loadDndStatus();
@@ -46,25 +49,100 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
     try {
       const data = await api.getRamDiagnostics();
       setRamDiag(data);
-      const safePids = data.top_apps.filter((a) => a.can_safely_close).slice(0, 4).map((a) => a.pid);
-      setSelectedPids(safePids);
+      const groups = data.grouped_apps || [];
+      const defaultSelected = groups
+        .filter((g) => g.is_useless_bloat || g.can_safely_close)
+        .slice(0, 6)
+        .map((g) => g.name);
+      setSelectedApps(defaultSelected);
     } catch (e) {
       console.error('Failed to load RAM diagnostics:', e);
     }
   };
 
-  const handleTogglePid = (pid: number) => {
-    setSelectedPids((prev) =>
-      prev.includes(pid) ? prev.filter((p) => p !== pid) : [...prev, pid]
+  const handleToggleAppGroup = (appName: string) => {
+    setSelectedApps((prev) =>
+      prev.includes(appName) ? prev.filter((n) => n !== appName) : [...prev, appName]
     );
+  };
+
+  const handleKillSingleAppGroup = async (appName: string) => {
+    setIsOptimizingRam(true);
+    setRamOptimizeResult(null);
+    try {
+      const res = await api.optimizeRam(undefined, [appName], false);
+      setRamOptimizeResult(
+        `Stopped ${appName} (${res.closed_pids.length} process${res.closed_pids.length !== 1 ? 'es' : ''}) · Freed ${res.reclaimed_mb} MB RAM.`
+      );
+      await loadRamDiagnostics();
+      onRefreshData();
+    } catch (e: any) {
+      setRamOptimizeResult(`Stop failed: ${e.message}`);
+    } finally {
+      setIsOptimizingRam(false);
+    }
+  };
+
+  const handleKillAllUselessApps = async () => {
+    setIsOptimizingRam(true);
+    setRamOptimizeResult(null);
+    try {
+      if (isAndroidApp) {
+        const res = await SentinelDeviceGuard.boostBackgroundMemory();
+        setRamOptimizeResult(
+          `Android Boost: Cleared ${res.killedPackagesCount} background apps · Freed ${res.freedMb} MB RAM (${res.availableAfterMb} MB free).`
+        );
+        return;
+      }
+      const res = await api.killUselessBackgroundApps();
+      setRamOptimizeResult(
+        `Killed ${res.closed_pids.length} useless background processes & trimmed ${res.trimmed_processes_count ?? 0} working sets · Freed ${res.reclaimed_mb} MB RAM!`
+      );
+      await loadRamDiagnostics();
+      onRefreshData();
+    } catch (e: any) {
+      setRamOptimizeResult(`Cleanup note: ${e.message}`);
+    } finally {
+      setIsOptimizingRam(false);
+    }
+  };
+
+  const handleTrimStandbyRam = async () => {
+    setIsOptimizingRam(true);
+    setRamOptimizeResult(null);
+    try {
+      const res = await api.trimStandbyRam();
+      setRamOptimizeResult(
+        `Trimmed working sets across ${res.trimmed_processes_count ?? 0} processes · Freed ${res.reclaimed_mb} MB standby RAM without closing apps.`
+      );
+      await loadRamDiagnostics();
+      onRefreshData();
+    } catch (e: any) {
+      setRamOptimizeResult(`Trim note: ${e.message}`);
+    } finally {
+      setIsOptimizingRam(false);
+    }
   };
 
   const handleBoostRam = async () => {
     setIsOptimizingRam(true);
     setRamOptimizeResult(null);
     try {
-      const res = await api.optimizeRam(selectedPids.length > 0 ? selectedPids : undefined);
-      setRamOptimizeResult(`Reclaimed ${res.reclaimed_mb} MB RAM! Successfully freed background memory.`);
+      if (isAndroidApp) {
+        const res = await SentinelDeviceGuard.boostBackgroundMemory();
+        setRamOptimizeResult(
+          `Android Boost: Cleared ${res.killedPackagesCount} background apps · Freed ${res.freedMb} MB RAM!`
+        );
+        return;
+      }
+      const res = await api.optimizeRam(
+        undefined,
+        selectedApps.length > 0 ? selectedApps : undefined,
+        false
+      );
+      setRamOptimizeResult(
+        `Stopped ${res.closed_pids.length} processes & trimmed ${res.trimmed_processes_count ?? 0} apps · Reclaimed ${res.reclaimed_mb} MB RAM!`
+      );
       await loadRamDiagnostics();
       onRefreshData();
     } catch (e: any) {
@@ -236,53 +314,83 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
               <Zap className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-semibold text-white">Smart RAM Optimization &amp; Diagnostics</h3>
+              <h3 className="text-xs font-semibold text-white">Useless Background App &amp; RAM Killer</h3>
               <p className="text-[11px] text-slate-400">
-                Safely free standby memory and close heavy idle user apps without touching system processes.
+                Stop idle bloatware, widgets, and background updaters, or trim Windows working sets safely without touching OS core processes.
               </p>
             </div>
           </div>
 
-          <button
-            onClick={handleBoostRam}
-            disabled={isOptimizingRam}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50 shrink-0"
-          >
-            <Zap className={`w-3.5 h-3.5 ${isOptimizingRam ? 'animate-spin' : ''}`} />
-            <span>{isOptimizingRam ? 'Optimizing RAM...' : 'Boost & Free RAM'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {!isAndroidApp && (
+              <button
+                onClick={handleTrimStandbyRam}
+                disabled={isOptimizingRam}
+                className="px-3 py-2 rounded-xl bg-[#142032] hover:bg-[#1D2C44] text-cyan-300 border border-cyan-500/40 font-medium text-xs transition-all disabled:opacity-50"
+                title="Free standby RAM without closing open apps"
+              >
+                Trim Standby RAM
+              </button>
+            )}
+            <button
+              onClick={handleKillAllUselessApps}
+              disabled={isOptimizingRam}
+              className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
+              title="Terminate all useless background bloat apps immediately"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Stop All Useless Apps</span>
+            </button>
+            <button
+              onClick={handleBoostRam}
+              disabled={isOptimizingRam}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50 shrink-0"
+            >
+              <Zap className={`w-3.5 h-3.5 ${isOptimizingRam ? 'animate-spin' : ''}`} />
+              <span>{isOptimizingRam ? 'Stopping & Freeing...' : 'Kill Selected & Boost RAM'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Smart Recommendation Banner */}
-        <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#0E1D24] to-[#121A28] border border-emerald-500/30 flex items-start sm:items-center gap-3">
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#0E1D24] to-[#121A28] border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center gap-3">
           <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
           <div className="flex-1 text-xs">
             <span className="font-semibold text-white">Recommendation: </span>
             <span className="text-slate-300">
-              Closing <strong className="text-emerald-400">{selectedPids.length} selected apps</strong> will reclaim ~<strong className="text-emerald-400">{Math.round(ramDiag?.top_apps.filter(a => selectedPids.includes(a.pid)).reduce((sum, a) => sum + a.memory_mb, 0) || 0)} MB</strong> of RAM.
+              Stopping <strong className="text-emerald-400">{selectedApps.length} selected background app groups</strong> reclaims ~
+              <strong className="text-emerald-400">
+                {Math.round(
+                  (ramDiag?.grouped_apps || [])
+                    .filter((g) => selectedApps.includes(g.name))
+                    .reduce((sum, g) => sum + g.total_memory_mb, 0)
+                )}{' '}
+                MB
+              </strong>{' '}
+              of RAM ({ramDiag?.useless_bloat_count ?? 0} bloatware groups detected).
             </span>
           </div>
           {ramOptimizeResult && (
-            <span className="text-[11px] font-medium text-emerald-400 px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/30">
+            <span className="text-[11px] font-medium text-emerald-400 px-2.5 py-1 rounded bg-emerald-950/80 border border-emerald-500/30">
               {ramOptimizeResult}
             </span>
           )}
         </div>
 
-        {/* Top Memory Consuming User Apps List */}
+        {/* Grouped Background Apps List */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
-            <span>Applications using memory (Safe background user apps)</span>
-            <span>{ramDiag?.top_apps.length || 0} apps detected</span>
+            <span>Background apps &amp; grouped instances (active foreground app &amp; OS core protected)</span>
+            <span>{ramDiag?.grouped_apps?.length || ramDiag?.top_apps.length || 0} app groups detected</span>
           </div>
 
-          <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-            {(ramDiag?.top_apps || []).slice(0, 10).map((app) => {
-              const isSelected = selectedPids.includes(app.pid);
+          <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+            {(ramDiag?.grouped_apps || []).map((grp) => {
+              const isSelected = selectedApps.includes(grp.name);
               return (
                 <div
-                  key={app.pid}
-                  onClick={() => app.can_safely_close && handleTogglePid(app.pid)}
+                  key={grp.name}
+                  onClick={() => grp.can_safely_close && handleToggleAppGroup(grp.name)}
                   className={`p-2.5 rounded-lg border flex items-center justify-between text-xs cursor-pointer transition-colors ${
                     isSelected
                       ? 'bg-[#121D2C] border-emerald-500/40 text-slate-200'
@@ -290,7 +398,7 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {app.can_safely_close ? (
+                    {grp.can_safely_close ? (
                       isSelected ? (
                         <CheckSquare className="w-4 h-4 text-emerald-400 shrink-0" />
                       ) : (
@@ -302,20 +410,43 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
                       </div>
                     )}
                     <div className="truncate">
-                      <span className="font-semibold text-white truncate">{app.name}</span>
-                      <span className="text-[11px] text-slate-400 ml-2 truncate">({app.category})</span>
+                      <span className="font-semibold text-white truncate">{grp.name}</span>
+                      <span className="text-[10px] text-cyan-400 font-mono ml-1.5">
+                        ({grp.instance_count} {grp.instance_count === 1 ? 'proc' : 'procs'})
+                      </span>
+                      <span className="text-[11px] text-slate-400 ml-2 truncate">· {grp.category}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <span className="font-mono text-xs text-slate-300">{app.memory_mb} MB</span>
-                    {app.can_safely_close ? (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-500/30">
-                        Safe to Close
-                      </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-mono text-xs text-slate-300">{grp.total_memory_mb} MB</span>
+                    {grp.can_safely_close ? (
+                      <>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded border hidden sm:inline ${
+                            grp.is_useless_bloat
+                              ? 'bg-amber-950/80 text-amber-300 border-amber-500/40'
+                              : 'bg-emerald-950/80 text-emerald-400 border-emerald-500/30'
+                          }`}
+                        >
+                          {grp.is_useless_bloat ? 'Useless Bloat' : 'Safe to Close'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleKillSingleAppGroup(grp.name);
+                          }}
+                          disabled={isOptimizingRam}
+                          className="px-2 py-0.5 rounded bg-red-500/15 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-[10px] font-semibold transition-colors"
+                          title={`Stop all instances of ${grp.name}`}
+                        >
+                          Stop
+                        </button>
+                      </>
                     ) : (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                        Active
+                        Protected
                       </span>
                     )}
                   </div>

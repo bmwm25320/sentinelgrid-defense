@@ -498,3 +498,133 @@ def scan_usb_drive_path(
         "status": "THREATS_NEUTRALIZED" if threats else "CLEAN",
         "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
+
+
+# ==================== 5. USELESS BACKGROUND BLOAT KILLER & RAM TRIMMER ====================
+
+BACKGROUND_BLOAT_CATALOG: Dict[str, str] = {
+    "widgets.exe": "Windows Widgets Bloat",
+    "widgetservice.exe": "Windows Widget Background Service",
+    "phoneexperiencehost.exe": "Phone Link Background Host",
+    "yourphone.exe": "YourPhone Background Sync",
+    "gamebar.exe": "Xbox Game Bar Overlay",
+    "gamebarpresencewriter.exe": "Xbox Game Bar Presence Writer",
+    "gamebarftserver.exe": "Xbox Game Bar Server",
+    "xboxpcappft.exe": "Xbox PC App Background",
+    "xboxgamecallableui.exe": "Xbox Callable UI",
+    "cortana.exe": "Cortana Background",
+    "copilot.exe": "Idle Copilot Sidebar Host",
+    "microsoftedgeupdate.exe": "Edge Background Updater",
+    "googleupdate.exe": "Google Background Updater",
+    "adobeupdateservice.exe": "Adobe Background Updater",
+    "armsvc.exe": "Adobe Acrobat Update Service",
+    "ccxprocess.exe": "Adobe Creative Cloud Helper",
+    "adobeipcbroker.exe": "Adobe IPC Broker",
+    "creative cloud.exe": "Adobe Creative Cloud",
+    "onedrivestandaloneupdater.exe": "OneDrive Updater",
+    "onedrive.exe": "Microsoft OneDrive Sync",
+    "dropbox.exe": "Dropbox Background Sync",
+    "skypebackgroundhost.exe": "Skype Background Host",
+    "skypeapp.exe": "Skype Background App",
+    "steam.exe": "Steam Client Launcher",
+    "steamwebhelper.exe": "Steam WebHelper Bloat",
+    "epicgameslauncher.exe": "Epic Games Launcher",
+    "epicwebhelper.exe": "Epic WebHelper Bloat",
+    "riotclientservices.exe": "Riot Client Background",
+    "riotclientux.exe": "Riot Client UI",
+    "battlenet.exe": "Battle.net Launcher",
+    "eaapp.exe": "EA App Launcher",
+    "discord.exe": "Discord Background Client",
+    "spotify.exe": "Spotify Music Client",
+    "slack.exe": "Slack Desktop",
+    "teams.exe": "Microsoft Teams",
+    "ms-teams.exe": "Microsoft Teams",
+    "msteams.exe": "Microsoft Teams",
+    "zoom.exe": "Zoom Background Client",
+    "hpsupportassistant.exe": "HP Support Assistant Bloat",
+    "hp.myhp.exe": "HP MyHP Bloatware",
+    "razerappengine.exe": "Razer Synapse Helper",
+    "dellsupportassist.exe": "Dell SupportAssist",
+    "chrome.exe": "Google Chrome Background Tabs",
+    "msedge.exe": "Microsoft Edge Background Tabs",
+    "brave.exe": "Brave Browser Background Tabs",
+    "firefox.exe": "Mozilla Firefox",
+    "opera.exe": "Opera Browser",
+    "notepad.exe": "Notepad",
+    "calculator.exe": "Windows Calculator",
+}
+
+BLOAT_KEYWORDS = (
+    "widget", "updater", "gamebar", "xboxpc", "steamwebhelper", "epicwebhelper",
+    "phoneexperience", "yourphone", "skype", "discord", "spotify", "slack",
+    "teams", "zoom", "onedrive", "dropbox", "ccxprocess", "adobeipc", "riotclient",
+    "supportassist", "razerapp", "copilot", "cortana"
+)
+
+
+def classify_background_process(p_name: str, is_protected: bool, is_foreground: bool) -> Dict[str, Any]:
+    """Classifies whether a process is useless background bloat that can safely be killed."""
+    name_lower = (p_name or "").lower()
+    if is_protected or is_foreground:
+        return {"can_safely_close": False, "is_useless_bloat": False, "category": "Protected / Active Foreground"}
+
+    if name_lower in BACKGROUND_BLOAT_CATALOG:
+        is_browser = name_lower in ("chrome.exe", "msedge.exe", "brave.exe", "firefox.exe", "opera.exe")
+        return {
+            "can_safely_close": True,
+            "is_useless_bloat": not is_browser,
+            "category": BACKGROUND_BLOAT_CATALOG[name_lower],
+        }
+
+    if any(kw in name_lower for kw in BLOAT_KEYWORDS):
+        return {
+            "can_safely_close": True,
+            "is_useless_bloat": True,
+            "category": "Useless Background Bloat / Helper",
+        }
+
+    return {"can_safely_close": False, "is_useless_bloat": False, "category": "System / Active Process"}
+
+
+def trim_system_working_sets(protected_pids: set[int], protected_check_fn: Callable[[Optional[str], Optional[int]], bool]) -> int:
+    """
+    Trims Windows OS working-set pages across non-critical processes using psapi.EmptyWorkingSet
+    and SetProcessWorkingSetSize so idle cached RAM returns cleanly to available memory.
+    """
+    if not _is_windows():
+        return 0
+
+    trimmed = 0
+    try:
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
+        PROCESS_QUERY_INFORMATION = 0x0400
+        PROCESS_SET_QUOTA = 0x0100
+
+        # Trim current process gently
+        try:
+            kernel32.SetProcessWorkingSetSize(ctypes.c_void_p(-1), ctypes.c_size_t(-1), ctypes.c_size_t(-1))
+        except Exception:
+            pass
+
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                pid = proc.info.get("pid")
+                pname = proc.info.get("name")
+                if not pid or pid <= 4 or pid in protected_pids:
+                    continue
+                if protected_check_fn(pname, pid):
+                    continue
+                handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA, False, int(pid))
+                if handle:
+                    try:
+                        if psapi.EmptyWorkingSet(handle):
+                            trimmed += 1
+                    finally:
+                        kernel32.CloseHandle(handle)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return trimmed
+

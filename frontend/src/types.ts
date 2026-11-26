@@ -230,6 +230,17 @@ export interface RamAppItem {
   name: string;
   memory_mb: number;
   can_safely_close: boolean;
+  is_useless_bloat?: boolean;
+  category: string;
+}
+
+export interface GroupedRamAppItem {
+  name: string;
+  pids: number[];
+  instance_count: number;
+  total_memory_mb: number;
+  can_safely_close: boolean;
+  is_useless_bloat: boolean;
   category: string;
 }
 
@@ -239,13 +250,17 @@ export interface RamDiagnostics {
   available_gb: number;
   percent: number;
   recommended_reclaim_mb: number;
+  useless_bloat_mb?: number;
+  useless_bloat_count?: number;
   safe_count: number;
   top_apps: RamAppItem[];
+  grouped_apps?: GroupedRamAppItem[];
 }
 
 export interface RamOptimizeResponse {
   status: string;
   reclaimed_mb: number;
+  trimmed_processes_count?: number;
   closed_pids: number[];
   closed_names: string[];
   new_used_gb: number;

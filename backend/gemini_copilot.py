@@ -186,6 +186,8 @@ def _call_gemini_rest_for_options(
         "- quick_scan (runs real-time smart virus/memory scan)\n"
         "- fast_laptop_scan (runs 5-stage system health & security audit)\n"
         "- boost_ram (reclaims unused memory safely without closing active UI)\n"
+        "- kill_useless_apps (terminates useless background bloatware, widgets & idle updaters + trims RAM)\n"
+        "- trim_ram (flushes standby OS memory working sets without closing apps)\n"
         "- hardware_privacy_audit (checks webcam, microphone, and ARP MITM status)\n"
         "- scan_usb (scans connected USB removable drives)\n"
         "- check_url (params: {\"url\": \"...\"})\n"
@@ -314,31 +316,31 @@ def _heuristic_options_planner(task: str, target_app: Dict[str, Any], device_sum
             ],
         }
 
-    if any(k in q for k in ("slow", "lag", "ram", "memory", "boost", "speed", "clean", "optimize")):
+    if any(k in q for k in ("useless", "bloat", "background app", "kill ram", "stop app", "slow", "lag", "ram", "memory", "boost", "speed", "clean", "optimize")):
         ram_pct = device_summary.get("ram_percent", 0)
         return {
-            "analysis": f"Current system RAM utilization is {ram_pct}% while `{app_name}` ({win_title}) is active. Pick an optimization step:",
+            "analysis": f"System RAM usage is {ram_pct}% while `{app_name}` ({win_title}) is active. Choose whether to kill useless background apps or trim standby memory:",
             "options": [
                 {
-                    "id": "opt_boost_ram",
-                    "title": "Empty & Boost RAM Safely",
-                    "description": "Flushes OS working sets and compacts background bloat while keeping active apps safe.",
+                    "id": "opt_kill_bloat",
+                    "title": "Stop Useless Background Apps & Free RAM",
+                    "description": "Terminates idle bloatware, widgets, updaters & background helpers + trims RAM safely.",
                     "impact": "FAST",
-                    "action_type": "boost_ram",
+                    "action_type": "kill_useless_apps",
                     "params": {},
                 },
                 {
-                    "id": "opt_fast_scan",
-                    "title": "Run 5-Stage Health & Startup Audit",
-                    "description": "Audits running processes, startup persistence, and system posture.",
-                    "impact": "DEEP",
-                    "action_type": "fast_laptop_scan",
+                    "id": "opt_trim_ram",
+                    "title": "Trim Standby RAM Only (Keep Apps Open)",
+                    "description": "Flushes Windows OS working sets across idle processes without closing windows.",
+                    "impact": "SAFE",
+                    "action_type": "trim_ram",
                     "params": {},
                 },
                 {
                     "id": "opt_open_device",
-                    "title": "Open Device Health & Startup",
-                    "description": "Inspect heavy background processes and startup apps manually.",
+                    "title": "Open Background App & RAM Killer",
+                    "description": "Select individual or grouped background bloat apps to stop manually.",
                     "impact": "SAFE",
                     "action_type": "navigate_tab",
                     "params": {"tab": "device"},

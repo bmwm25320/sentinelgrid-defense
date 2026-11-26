@@ -1,5 +1,6 @@
 package com.sentinelgrid.defense;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
@@ -444,6 +445,63 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         ctx.stopService(new Intent(ctx, GeminiOverlayService.class));
         JSObject res = new JSObject();
         res.put("stopped", true);
+        call.resolve(res);
+    }
+
+    public static boolean isEligibleBackgroundAppForBoost(String packageName, String selfPackageName, boolean isSystemApp) {
+        if (packageName == null || packageName.isEmpty()) return false;
+        if (packageName.equals(selfPackageName)) return false;
+        if (isSystemApp) return false;
+        if (packageName.startsWith("com.android.systemui") || packageName.startsWith("com.google.android.gms")) {
+            return false;
+        }
+        return true;
+    }
+
+    @PluginMethod
+    public void boostBackgroundMemory(PluginCall call) {
+        Context ctx = getContext();
+        ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+        PackageManager pm = ctx.getPackageManager();
+        String selfPkg = ctx.getPackageName();
+
+        if (am == null) {
+            call.reject("ActivityManager unavailable");
+            return;
+        }
+
+        ActivityManager.MemoryInfo beforeMem = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(beforeMem);
+        long availBeforeMb = beforeMem.availMem / (1024 * 1024);
+        long totalMb = beforeMem.totalMem / (1024 * 1024);
+
+        int killedCount = 0;
+        try {
+            List<ApplicationInfo> apps = pm.getInstalledApplications(0);
+            for (ApplicationInfo app : apps) {
+                boolean isSys = (app.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+                if (isEligibleBackgroundAppForBoost(app.packageName, selfPkg, isSys)) {
+                    try {
+                        am.killBackgroundProcesses(app.packageName);
+                        killedCount++;
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        ActivityManager.MemoryInfo afterMem = new ActivityManager.MemoryInfo();
+        am.getMemoryInfo(afterMem);
+        long availAfterMb = afterMem.availMem / (1024 * 1024);
+        long freedMb = Math.max(0, availAfterMb - availBeforeMb);
+
+        JSObject res = new JSObject();
+        res.put("killedPackagesCount", killedCount);
+        res.put("availableBeforeMb", availBeforeMb);
+        res.put("availableAfterMb", availAfterMb);
+        res.put("freedMb", freedMb);
+        res.put("totalMemoryMb", totalMb);
         call.resolve(res);
     }
 }

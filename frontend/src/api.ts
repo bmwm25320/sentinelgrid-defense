@@ -216,11 +216,29 @@ export const api = {
     return handleResponse<RamDiagnostics>(res);
   },
 
-  optimizeRam: async (pids?: number[]): Promise<RamOptimizeResponse> => {
+  optimizeRam: async (
+    pids?: number[],
+    process_names?: string[],
+    kill_all_bloat: boolean = false
+  ): Promise<RamOptimizeResponse> => {
     const res = await fetch(`${BASE_URL}/api/ram/optimize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pids }),
+      body: JSON.stringify({ pids, process_names, kill_all_bloat, trim_working_sets: true }),
+    });
+    return handleResponse<RamOptimizeResponse>(res);
+  },
+
+  killUselessBackgroundApps: async (): Promise<RamOptimizeResponse> => {
+    const res = await fetch(`${BASE_URL}/api/ram/kill-bloat`, {
+      method: 'POST',
+    });
+    return handleResponse<RamOptimizeResponse>(res);
+  },
+
+  trimStandbyRam: async (): Promise<RamOptimizeResponse> => {
+    const res = await fetch(`${BASE_URL}/api/ram/trim`, {
+      method: 'POST',
     });
     return handleResponse<RamOptimizeResponse>(res);
   },

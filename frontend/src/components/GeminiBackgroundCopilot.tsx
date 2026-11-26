@@ -176,6 +176,13 @@ Return ONLY valid JSON:
             action_type: 'android_scan_apps',
           },
           {
+            id: 'opt_and_ram',
+            title: 'Kill Background Apps & Free RAM',
+            description: 'Clears cached background apps using KILL_BACKGROUND_PROCESSES.',
+            impact: 'FAST',
+            action_type: 'android_boost_ram',
+          },
+          {
             id: 'opt_and_wifi',
             title: 'Check Mobile Wi-Fi & DNS Security',
             description: 'Detects public captive portals & Private DNS posture.',
@@ -277,6 +284,9 @@ Return ONLY valid JSON:
       if (opt.action_type === 'android_scan_apps' && isAndroid) {
         const res = await SentinelDeviceGuard.scanInstalledApps();
         summary = `Android APK Scan Complete: Security Score ${res.securityScore}/100 · ${res.userAppsCount} user apps checked · ${res.sideloadedCount} sideloaded · ${res.stalkerwareSuspects} stalkerware suspects.`;
+      } else if (opt.action_type === 'android_boost_ram' && isAndroid) {
+        const res = await SentinelDeviceGuard.boostBackgroundMemory();
+        summary = `Android RAM Boost Complete: Cleared ${res.killedPackagesCount} background apps · Freed ${res.freedMb} MB RAM (${res.availableAfterMb} MB available).`;
       } else if (opt.action_type === 'android_check_wifi' && isAndroid) {
         const res = await SentinelDeviceGuard.inspectWifiSecurity();
         summary = `Android Network Check (${res.transport}): ${res.status} — ${res.advice}`;
@@ -498,7 +508,7 @@ Return ONLY valid JSON:
           <div className="px-3 py-1.5 bg-[#090E18] border-t border-[#1F2937] flex items-center gap-1.5 overflow-x-auto">
             {[
               `Protect ${watchedApp}`,
-              'PC feels slow boost RAM',
+              'Stop useless background apps',
               'Check camera mic & Wi-Fi',
               'Scan USB & threats',
             ].map((preset) => (

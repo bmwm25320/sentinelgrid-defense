@@ -83,4 +83,12 @@ public class SentinelDeviceGuardTest {
         assertTrue(generalPlan.options.size() >= 3);
         assertEquals("SCAN_APPS", generalPlan.options.get(0).actionType);
     }
+
+    @Test
+    public void testAndroidBackgroundBoostEligibility() {
+        assertTrue(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.instagram.android", "com.sentinelgrid.defense", false));
+        assertFalse(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.sentinelgrid.defense", "com.sentinelgrid.defense", false));
+        assertFalse(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.android.systemui", "com.sentinelgrid.defense", false));
+        assertFalse(SentinelDeviceGuardPlugin.isEligibleBackgroundAppForBoost("com.android.phone", "com.sentinelgrid.defense", true));
+    }
 }
