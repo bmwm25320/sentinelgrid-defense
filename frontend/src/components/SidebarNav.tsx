@@ -188,7 +188,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       {/* Responsive Android / Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Mobile Navigation"
-        className="md:hidden fixed bottom-0 inset-x-0 bg-[#0D121D]/95 backdrop-blur-md border-t border-[#1F2937] z-30 flex items-center justify-around px-1 py-1.5 overflow-x-auto"
+        className={`md:hidden fixed bottom-0 inset-x-0 bg-[#0D121D]/95 backdrop-blur-md border-t border-[#1F2937] z-30 grid ${isAdmin ? 'grid-cols-8' : 'grid-cols-7'} gap-0.5 px-1 py-1.5`}
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -197,21 +197,21 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center px-2 py-1 rounded-lg min-w-[48px] text-[10px] font-medium transition-colors ${
+              className={`flex flex-col items-center justify-center px-0.5 py-1 rounded-lg text-[9px] font-medium transition-colors ${
                 isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400'
               }`}
             >
-              <Icon className="w-4 h-4 mb-0.5" />
-              <span className="truncate max-w-[54px]">{item.label.split(' ')[0]}</span>
+              <Icon className="w-4 h-4 mb-0.5 shrink-0" />
+              <span className="truncate max-w-full">{item.id === 'vault' ? 'Vault' : item.label.split(' ')[0]}</span>
             </button>
           );
         })}
         <button
           onClick={onOpenSettings}
-          className="flex flex-col items-center justify-center px-2 py-1 rounded-lg min-w-[46px] text-[10px] font-medium text-slate-400"
+          className="flex flex-col items-center justify-center px-0.5 py-1 rounded-lg text-[9px] font-medium text-slate-400"
         >
-          <Settings className="w-4 h-4 mb-0.5" />
-          <span>Settings</span>
+          <Settings className="w-4 h-4 mb-0.5 shrink-0" />
+          <span className="truncate max-w-full">Settings</span>
         </button>
       </nav>
     </>

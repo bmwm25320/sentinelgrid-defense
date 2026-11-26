@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { DeviceAudit, AlertItem, QuarantineItem } from '../types';
 import { FastLaptopScanModal } from './FastLaptopScanModal';
+import { isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
 interface HomeViewProps {
   onStartQuickScan: () => void;
@@ -37,6 +38,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   lastScanTime = 'Today, 4:15 PM',
 }) => {
   const [isFastScanOpen, setIsFastScanOpen] = useState(false);
+  const isAndroid = isAndroidNativeApp();
   const activeThreats = alerts.filter(a => a.status === 'BLOCKED');
   const hasThreats = activeThreats.length > 0;
   const vulnCount = audit?.vulnerabilities?.length ?? 0;
@@ -175,13 +177,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setIsFastScanOpen(true)}
-              className="px-5 py-3 rounded-xl font-medium text-xs sm:text-sm flex items-center justify-center gap-2 bg-[#142032] hover:bg-[#1D2C44] text-cyan-300 border border-cyan-500/40 transition-all shadow-md shrink-0"
-            >
-              <Laptop className="w-4 h-4 text-cyan-400" />
-              <span>5-Min Fast Scan</span>
-            </button>
+            {!isAndroid && (
+              <button
+                onClick={() => setIsFastScanOpen(true)}
+                className="px-5 py-3 rounded-xl font-medium text-xs sm:text-sm flex items-center justify-center gap-2 bg-[#142032] hover:bg-[#1D2C44] text-cyan-300 border border-cyan-500/40 transition-all shadow-md shrink-0"
+              >
+                <Laptop className="w-4 h-4 text-cyan-400" />
+                <span>5-Min Fast Scan</span>
+              </button>
+            )}
 
             <button
               onClick={onStartQuickScan}
@@ -195,7 +199,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               {isScanning ? (
                 <>
                   <RotateCw className="w-4 h-4 animate-spin text-emerald-300" />
-                  <span>Scanning PC...</span>
+                  <span>{isAndroid ? 'Scanning Phone...' : 'Scanning PC...'}</span>
                 </>
               ) : (
                 <>

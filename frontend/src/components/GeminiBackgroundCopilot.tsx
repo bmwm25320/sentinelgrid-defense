@@ -341,7 +341,7 @@ Return ONLY valid JSON:
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-5 right-5 z-40 group flex items-center gap-2.5 pl-3.5 pr-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-xs shadow-2xl shadow-emerald-500/30 border border-white/20 transition-all hover:scale-105 active:scale-95"
+          className="fixed bottom-20 right-3 md:bottom-5 md:right-5 z-40 group flex items-center gap-2 pl-3 pr-3.5 py-2 md:py-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-xs shadow-2xl shadow-emerald-500/30 border border-white/20 transition-all hover:scale-105 active:scale-95"
           title="Open Always-On Gemini Co-Pilot (Ctrl+Shift+G on Windows)"
         >
           <span className="relative flex h-2.5 w-2.5">
@@ -358,7 +358,7 @@ Return ONLY valid JSON:
 
       {/* Interactive Background Co-Pilot Drawer */}
       {isOpen && (
-        <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] sm:w-[440px] max-h-[82vh] bg-[#0B111E]/98 backdrop-blur-xl border border-emerald-500/40 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed bottom-20 right-3 md:bottom-4 md:right-4 z-50 w-[calc(100vw-1.5rem)] sm:w-[440px] max-h-[75vh] md:max-h-[82vh] bg-[#0B111E]/98 backdrop-blur-xl border border-emerald-500/40 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
           {/* Header */}
           <div className="p-3.5 bg-[#080D18] border-b border-[#1F2937] flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">

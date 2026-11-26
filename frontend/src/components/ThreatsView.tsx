@@ -361,6 +361,7 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
           </div>
 
           {/* 5-Minute Fast Laptop Scan */}
+          {!isAndroidApp && (
           <div className="defender-card p-5 flex flex-col justify-between border-cyan-500/30">
             <div>
               <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-3">
@@ -379,6 +380,7 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
               <span>5-Min Laptop Scan</span>
             </button>
           </div>
+          )}
 
           {/* Full Scan */}
           <div className="defender-card p-5 flex flex-col justify-between">
@@ -388,7 +390,9 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
               </div>
               <h3 className="text-sm font-semibold text-white">Full Maximum Scan</h3>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Comprehensive 4-stage sweep across memory, file entropy, open ports, and startup persistence.
+                {isAndroidApp
+                  ? 'Full native APK permission audit, Wi-Fi captive portal check & App Lock verification.'
+                  : 'Comprehensive 4-stage sweep across memory, file entropy, open ports, and startup persistence.'}
               </p>
             </div>
             <button
@@ -400,7 +404,9 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             </button>
           </div>
 
-          {/* Custom Folder Scan */}
+          {/* Custom Folder Scan & Windows Defender (Desktop only) */}
+          {!isAndroidApp && (
+          <>
           <div className="defender-card p-5 flex flex-col justify-between">
             <div>
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 mb-3">
@@ -457,6 +463,8 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
               {defenderScanning ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : 'Defender Bridge Scan'}
             </button>
           </div>
+          </>
+          )}
         </div>
 
         {/* Live Scan Progress Card */}
@@ -710,7 +718,8 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
 
       {/* Section 3B: Cross-Platform USB Auto-Shield & Android APK Guard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* USB Removable Drive Auto-Shield */}
+        {/* USB Removable Drive Auto-Shield (Desktop only) */}
+        {!isAndroidApp && (
         <div className="defender-card p-5 space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
             <div className="flex items-center gap-2.5">
@@ -756,6 +765,7 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             </div>
           )}
         </div>
+        )}
 
         {/* Native Android App & Stalkerware Scanner */}
         <div className="defender-card p-5 space-y-3">

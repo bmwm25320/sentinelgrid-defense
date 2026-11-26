@@ -781,7 +781,9 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
         </div>
       )}
 
-      {/* Windows Security Posture Check */}
+      {/* Windows Security Posture, Startup Applications & Running Processes (Desktop only) */}
+      {!isAndroidApp && (
+      <>
       <div className="defender-card p-5 space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
           <div className="flex items-center gap-2">
@@ -944,6 +946,8 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
           })}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };

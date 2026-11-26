@@ -61,6 +61,7 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
   const [launchingSafeMoney, setLaunchingSafeMoney] = useState(false);
   const [safeMoneyResult, setSafeMoneyResult] = useState<SafeMoneyLaunchResult | null>(null);
   const [safeMoneyError, setSafeMoneyError] = useState<string | null>(null);
+  const isAndroid = isAndroidNativeApp();
 
   const loadNetworkShield = async () => {
     setRefreshingShield(true);
@@ -192,7 +193,7 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       {/* Top Network Status Banner */}
       <div className="p-6 rounded-2xl bg-gradient-to-r from-[#0F1B24] via-[#131A26] to-[#131A26] border border-emerald-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
         <div className="flex items-center gap-4">
@@ -265,11 +266,14 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           <div className="text-2xl font-bold text-emerald-400 tracking-tight">
             Protected
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Windows Firewall active and blocking probes</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {isAndroid ? 'Android Private DNS & Wi-Fi Shield active' : 'Windows Firewall active and blocking probes'}
+          </p>
         </div>
       </div>
 
-      {/* Hardware Privacy & ARP Spoofing Guard Panel */}
+      {/* Hardware Privacy & ARP Spoofing Guard Panel (Desktop) / Android Wi-Fi Guard */}
+      {!isAndroid && (
       <div className="defender-card p-5 space-y-4">
         <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
           <div className="flex items-center gap-2">
@@ -342,8 +346,11 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Network Safety & Open Ports Advice */}
+      {!isAndroid ? (
+      <>
       <div className="defender-card p-5 space-y-3">
         <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
           <div className="flex items-center gap-2">
@@ -375,6 +382,46 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           </div>
         </div>
       </div>
+      </>
+      ) : (
+      <div className="defender-card p-5 space-y-3">
+        <div className="flex items-center justify-between pb-2 border-b border-[#1F2937]">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-xs font-semibold text-white">Android Mobile Wi-Fi, VPN &amp; DNS Guard</h3>
+          </div>
+          <button
+            onClick={loadNetworkShield}
+            disabled={refreshingShield}
+            className="text-[11px] text-emerald-400 flex items-center gap-1"
+          >
+            <RotateCw className={`w-3 h-3 ${refreshingShield ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937]">
+            <div className="text-slate-400 text-[11px]">Active Transport</div>
+            <div className="font-bold text-white mt-0.5">{androidWifi?.transport || 'CHECKING...'}</div>
+          </div>
+          <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937]">
+            <div className="text-slate-400 text-[11px]">Private DNS / VPN</div>
+            <div className="font-bold text-emerald-400 mt-0.5">
+              {androidWifi?.vpnActive ? 'VPN Active' : androidWifi?.privateDnsActive ? 'Private DNS ON' : 'Standard DNS'}
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937]">
+            <div className="text-slate-400 text-[11px]">Captive Portal Hijack</div>
+            <div className={`font-bold mt-0.5 ${androidWifi?.captivePortalDetected ? 'text-red-400' : 'text-emerald-400'}`}>
+              {androidWifi?.captivePortalDetected ? 'DETECTED (Risk)' : 'None Detected'}
+            </div>
+          </div>
+        </div>
+        {androidWifi?.advice && (
+          <p className="text-xs text-slate-400">{androidWifi.advice}</p>
+        )}
+      </div>
+      )}
 
       {/* Safe Link & Phishing Checker */}
       <div className="defender-card p-5 space-y-4">
@@ -501,7 +548,8 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
         )}
       </div>
 
-      {/* Safe Money Protected Banking Browser & Chrome/Edge MV3 Web Shield Extension */}
+      {/* Safe Money Protected Banking Browser & Chrome/Edge MV3 Web Shield Extension (Desktop) */}
+      {!isAndroid && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Safe Money */}
         <div className="defender-card p-5 space-y-3 border-emerald-500/20">
@@ -594,8 +642,11 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           </a>
         </div>
       </div>
+      )}
 
-      {/* Active Applications Using Internet */}
+      {/* Active Applications Using Internet & OS Firewall (Desktop) */}
+      {!isAndroid && (
+      <>
       <div className="defender-card p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#1F2937]">
           <div>
@@ -713,6 +764,8 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

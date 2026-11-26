@@ -70,6 +70,9 @@ public class SentinelDeviceGuardPlugin extends Plugin {
     private static final Set<String> TRUSTED_INSTALLERS = new HashSet<>(Arrays.asList(
         "com.android.vending",
         "com.sec.android.app.samsungapps",
+        "com.samsung.android.app.omcagent",
+        "com.samsung.android.app.updatecenter",
+        "com.sec.android.preloadinstaller",
         "com.amazon.venezia",
         "com.huawei.appmarket"
     ));
@@ -96,8 +99,16 @@ public class SentinelDeviceGuardPlugin extends Plugin {
             Collections.addAll(perms, requestedPermissions);
         }
 
-        boolean hasTrustedInstaller = installerPackage != null && TRUSTED_INSTALLERS.contains(installerPackage);
-        eval.isSideloaded = !isSystemApp && !hasTrustedInstaller;
+        boolean isOemPkg = packageName != null && (
+            packageName.startsWith("com.samsung.") ||
+            packageName.startsWith("com.sec.android.") ||
+            packageName.startsWith("com.google.android.")
+        );
+        boolean hasTrustedInstaller = installerPackage != null && (
+            TRUSTED_INSTALLERS.contains(installerPackage) ||
+            (isOemPkg && "com.android.packageinstaller".equals(installerPackage))
+        );
+        eval.isSideloaded = !isSystemApp && !isOemPkg && !hasTrustedInstaller;
 
         if (eval.isSideloaded) {
             eval.riskScore += 30;
@@ -121,10 +132,10 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         if (hasInstallPkgs) eval.dangerousPermissions.add("APK_DROPPER");
         if (hasAccessibility) eval.dangerousPermissions.add("ACCESSIBILITY_CONTROL");
 
-        // Banking Trojan combo: Overlay + SMS interception
-        if (hasOverlay && hasSms && !isSystemApp) {
+        // Banking Trojan combo: Overlay + SMS interception (flag HIGH only if untrusted/sideloaded)
+        if (hasOverlay && hasSms && !isSystemApp && !hasTrustedInstaller && !isOemPkg) {
             eval.riskScore += 45;
-            eval.reasons.add("Banking Trojan pattern: can draw screen overlays and read/intercept SMS OTPs");
+            eval.reasons.add("Banking Trojan pattern: untrusted APK can draw overlays and intercept SMS OTPs");
         }
 
         // Hidden Stalkerware / Spyware heuristic: no launcher icon + sensitive surveillance permissions
