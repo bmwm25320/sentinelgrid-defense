@@ -573,12 +573,40 @@ export const api = {
     actionType: string,
     params?: Record<string, any>
   ): Promise<GeminiExecuteResult> => {
-    const res = await fetch(`${BASE_URL}/api/gemini/execute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ option_id: optionId, action_type: actionType, params: params || {} }),
-    });
-    return handleResponse<GeminiExecuteResult>(res);
+    try {
+      const res = await fetch(`${BASE_URL}/api/gemini/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ option_id: optionId, action_type: actionType, params: params || {} }),
+      });
+      return handleResponse<GeminiExecuteResult>(res);
+    } catch (err) {
+      if (isAndroidNativeApp()) {
+        if (actionType === 'boost_ram' || actionType === 'kill_useless_bloat') {
+          const boost = await SentinelDeviceGuard.boostBackgroundMemory();
+          return {
+            status: 'executed',
+            action_type: actionType,
+            summary: `Android Boost: Cleared ${boost.killedPackagesCount} background apps · Freed ${boost.freedMb} MB RAM.`,
+          };
+        }
+        if (actionType === 'hardware_privacy_audit') {
+          const wifi = await SentinelDeviceGuard.inspectWifiSecurity();
+          return {
+            status: 'executed',
+            action_type: actionType,
+            summary: `Android Network (${wifi.transport}): ${wifi.status} — ${wifi.advice}`,
+          };
+        }
+        const scan = await SentinelDeviceGuard.scanInstalledApps();
+        return {
+          status: 'executed',
+          action_type: actionType,
+          summary: `Android Security Scan: Score ${scan.securityScore}/100 · ${scan.userAppsCount} apps audited.`,
+        };
+      }
+      throw err;
+    }
   },
 
   scanDiskJunk: async (): Promise<DiskJunkScanResult> => {

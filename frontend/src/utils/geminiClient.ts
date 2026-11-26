@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 
-const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3-flash-preview'] as const;
+const GEMINI_MODELS = ['gemini-3-flash-preview', 'gemini-3.8-flash'] as const;
 
 export function getActiveGeminiKey(overrideKey?: string): string {
   return (
@@ -21,11 +21,14 @@ export async function generateWithGeminiFallback(
   const ai = new GoogleGenAI({ apiKey: key });
   for (const model of GEMINI_MODELS) {
     try {
-      const response = await ai.models.generateContent({
-        model,
-        contents,
-        ...(systemInstruction ? { config: { systemInstruction } } : {}),
-      });
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model,
+          contents,
+          ...(systemInstruction ? { config: { systemInstruction } } : {}),
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini timeout')), 10000)),
+      ]);
       if (response.text) {
         return { text: response.text, model };
       }

@@ -12,6 +12,7 @@ import {
 import { generateWithGeminiFallback } from '../utils/geminiClient';
 import { api } from '../api';
 import type { DeviceAudit, AlertItem, StartupItem, VulnerabilityItem, GeminiTaskOption } from '../types';
+import { SentinelDeviceGuard, isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
 interface Message {
   id: string;
@@ -59,17 +60,25 @@ Your device health score is currently **${audit?.security_score || 85}/100**, an
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [tempKey, setTempKey] = useState(apiKey);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isAndroid = isAndroidNativeApp();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  const starterChips = [
-    { label: '🛡️ Is my PC safe right now?', prompt: 'Is my device safe right now? Explain in simple terms.' },
-    { label: '⚡ Check startup apps and speed', prompt: 'How is my computer speed and what programs start automatically?' },
-    { label: '🌐 Are any apps using my internet suspiciously?', prompt: 'Check the apps using my internet connection. Are any of them suspicious?' },
-    { label: '🔍 Run a Quick Scan', prompt: 'Please run a quick scan on my computer.' },
-  ];
+  const starterChips = isAndroid
+    ? [
+        { label: '🛡️ Is my phone safe right now?', prompt: 'Is my Android phone safe right now? Explain in simple terms.' },
+        { label: '⚡ Boost RAM & clear background apps', prompt: 'My phone feels slow, boost RAM and stop idle background apps.' },
+        { label: '🌐 Check my Wi-Fi & DNS safety', prompt: 'Check my active Wi-Fi, VPN, and DNS security.' },
+        { label: '🔍 Scan Installed Apps (APKs)', prompt: 'Please run a security scan on my installed Android apps.' },
+      ]
+    : [
+        { label: '🛡️ Is my PC safe right now?', prompt: 'Is my device safe right now? Explain in simple terms.' },
+        { label: '⚡ Check startup apps and speed', prompt: 'How is my computer speed and what programs start automatically?' },
+        { label: '🌐 Are any apps using my internet suspiciously?', prompt: 'Check the apps using my internet connection. Are any of them suspicious?' },
+        { label: '🔍 Run a Quick Scan', prompt: 'Please run a quick scan on my computer.' },
+      ];
 
   const buildDeviceContext = () => {
     return {
@@ -102,22 +111,24 @@ Your device health score is currently **${audit?.security_score || 85}/100**, an
     const activeKey = apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
     const isScanRequest = query.toLowerCase().includes('scan');
 
-    // Plan structured interactive Task -> Options via Background Gemini Co-Pilot Engine
-    try {
-      const plan = await api.planGeminiTask(query.trim(), activeKey);
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        sender: 'assistant',
-        text: plan.analysis,
-        options: plan.options,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        actionTool: isScanRequest ? 'run_scan' : null,
-      };
-      setMessages(prev => [...prev, assistantMsg]);
-      setLoading(false);
-      return;
-    } catch {
-      // Fall back to direct @google/genai or offline planner
+    // Plan structured interactive Task -> Options via Background Gemini Co-Pilot Engine (Desktop)
+    if (!isAndroid) {
+      try {
+        const plan = await api.planGeminiTask(query.trim(), activeKey);
+        const assistantMsg: Message = {
+          id: (Date.now() + 1).toString(),
+          sender: 'assistant',
+          text: plan.analysis,
+          options: plan.options,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          actionTool: isScanRequest ? 'run_scan' : null,
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+        setLoading(false);
+        return;
+      } catch {
+        // Fall back to direct @google/genai or offline planner
+      }
     }
 
     // 1. Try Gemini 3 via shared client if key is available
@@ -190,10 +201,29 @@ ${JSON.stringify(deviceContext, null, 2)}`;
     setExecutingOptId(opt.id);
     const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     try {
-      const res = await api.executeGeminiOption(opt.id, opt.action_type, opt.params);
-      if (res.navigate_to) {
-        onNavigateTab(res.navigate_to);
-      } else if (opt.action_type === 'quick_scan') {
+      let summary = '';
+      let targetNav: string | undefined;
+      if (isAndroid && (opt.action_type === 'android_scan_apps' || opt.action_type === 'quick_scan')) {
+        const scan = await SentinelDeviceGuard.scanInstalledApps();
+        summary = `Android APK Audit: Score ${scan.securityScore}/100 · ${scan.userAppsCount} apps checked · ${scan.highRiskCount} high-risk.`;
+      } else if (isAndroid && (opt.action_type === 'android_boost_ram' || opt.action_type === 'boost_ram' || opt.action_type === 'kill_useless_bloat')) {
+        const res = await SentinelDeviceGuard.boostBackgroundMemory();
+        summary = `Cleared ${res.killedPackagesCount} background apps · Freed ${res.freedMb} MB RAM.`;
+      } else if (isAndroid && (opt.action_type === 'android_check_wifi' || opt.action_type === 'hardware_privacy_audit')) {
+        const wifi = await SentinelDeviceGuard.inspectWifiSecurity();
+        summary = `Network (${wifi.transport}): ${wifi.status} — ${wifi.advice}`;
+      } else if (opt.action_type === 'navigate_tab') {
+        targetNav = String(opt.params?.tab || 'home');
+        summary = `Opened '${targetNav}' view.`;
+      } else {
+        const res = await api.executeGeminiOption(opt.id, opt.action_type, opt.params);
+        summary = res.summary;
+        targetNav = res.navigate_to;
+      }
+
+      if (targetNav) {
+        onNavigateTab(targetNav);
+      } else if (opt.action_type === 'quick_scan' && !isAndroid) {
         onStartQuickScan();
       }
       setMessages(prev =>
@@ -202,7 +232,7 @@ ${JSON.stringify(deviceContext, null, 2)}`;
           .concat({
             id: (Date.now() + 2).toString(),
             sender: 'execution',
-            text: `Completed "${opt.title}": ${res.summary}`,
+            text: `Completed "${opt.title}": ${summary}`,
             timestamp: ts,
           })
       );
