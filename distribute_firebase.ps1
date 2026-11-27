@@ -1,7 +1,6 @@
 param(
-    [Parameter(Mandatory=$true)]
-    [string]$FirebaseAppId,
-    [string]$Testers = "",
+    [string]$FirebaseAppId = "1:693966093694:android:9f0db47539bc60e6cd072f",
+    [string]$Testers = "bmwm25320@gmail.com",
     [string]$Groups = "testers",
     [string]$ReleaseNotes = "SentinelGrid Defense Release APK - Samsung & Android 16 Verified"
 )

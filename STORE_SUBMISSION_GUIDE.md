@@ -20,22 +20,23 @@ This repository now builds **both** signed Release artifacts for app stores and 
 1. **Samsung Galaxy Store Seller Portal (Free signup, $0 listing):**
    - Sign in at `seller.samsungapps.com` and complete Seller identity verification.
    - Upload `frontend/android/app/build/outputs/apk/release/app-release.apk`.
-   - Link your hosted Privacy Policy (`PRIVACY_POLICY.md` / GitHub URL / `/privacy-policy`).
+   - Link your live HTTPS Privacy Policy: **`https://sentinelgrid-defense.web.app/privacy-policy.html`** (hosted free on Firebase Hosting).
    - Apps installed from Galaxy Store are store-trusted on Samsung devices, avoiding Samsung Auto Blocker sideload warnings.
 2. **Indus Appstore (Free signup, $0 listing — India):**
    - Register at `indusappstore.com/developers` and upload the same signed `app-release.apk`.
 
 ---
 
-## Option 2 — Completely Free ($0): Firebase App Distribution (Beta / Direct Users)
+## Option 2 — Completely Free ($0): Firebase App Distribution (LIVE & CONFIGURED)
 
-1. Open Firebase Console (`sentinelgrid-defense`) → **Build → App Distribution** → click **Get started** and add an Android app (`com.sentinelgrid.defense`) if not already listed.
-2. Copy the **Android App ID** (`1:693966093694:android:...`).
-3. Log into Firebase CLI once and run the included helper script:
-   ```powershell
-   npx firebase-tools login
-   .\distribute_firebase.ps1 -FirebaseAppId "1:693966093694:android:YOUR_ANDROID_APP_ID" -Testers "tester@example.com"
-   ```
+Firebase App Distribution is **already configured and live** for Android App ID `1:693966093694:android:9f0db47539bc60e6cd072f` with tester group `testers` (`bmwm25320@gmail.com`).
+
+- **Live Tester Download URL:** `https://appdistribution.firebase.google.com/testerapps/1:693966093694:android:9f0db47539bc60e6cd072f/releases/7251jg8jj8s8o`
+- **To invite more testers:** Add their emails inside Firebase Console → App Distribution → Testers & Groups → `testers`, or re-run:
+  ```powershell
+  npx firebase-tools login
+  .\distribute_firebase.ps1 -Testers "friend@gmail.com"
+  ```
 
 ---
 
