@@ -34,6 +34,7 @@ import {
   type AndroidNotificationShieldStatus,
   type AndroidAppLockStatus,
   type AndroidLocationResult,
+  type AndroidOverlayStatus,
 } from '../plugins/sentinelDeviceGuard';
 
 interface ThreatsViewProps {
@@ -83,6 +84,7 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
   const [androidScanning, setAndroidScanning] = useState(false);
   const [notifShield, setNotifShield] = useState<AndroidNotificationShieldStatus | null>(null);
   const [appLockStatus, setAppLockStatus] = useState<AndroidAppLockStatus | null>(null);
+  const [overlayStatus, setOverlayStatus] = useState<AndroidOverlayStatus | null>(null);
   const [appLockPackages, setAppLockPackages] = useState('com.whatsapp,com.phonepe.app,com.google.android.apps.nbu.paisa.user');
   const [appLockPin, setAppLockPin] = useState('2580');
   const [appLockEnabled, setAppLockEnabled] = useState(false);
@@ -101,12 +103,14 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
 
   const loadAndroidSecuritySuite = async () => {
     try {
-      const [nRes, lRes] = await Promise.all([
+      const [nRes, lRes, oRes] = await Promise.all([
         SentinelDeviceGuard.getNotificationShieldStatus(),
         SentinelDeviceGuard.getAppLockStatus(),
+        SentinelDeviceGuard.getOverlayStatus().catch(() => null),
       ]);
       setNotifShield(nRes);
       setAppLockStatus(lRes);
+      if (oRes) setOverlayStatus(oRes);
       setAppLockEnabled(lRes.serviceRunning);
       if (lRes.lockedPackages?.length) {
         setAppLockPackages(lRes.lockedPackages.join(','));
@@ -786,6 +790,92 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
 
           {isAndroidApp ? (
             <div className="space-y-3">
+              {/* Guided 3-Step Android Permission Setup Wizard */}
+              {(() => {
+                const steps = [
+                  {
+                    id: 'notif',
+                    label: '1. Safe Messaging Phishing Shield',
+                    hint: 'Scan WhatsApp/SMS links',
+                    done: Boolean(notifShield?.permissionGranted),
+                    action: () => SentinelDeviceGuard.requestNotificationAccess(),
+                  },
+                  {
+                    id: 'usage',
+                    label: '2. Biometric App Lock Guard',
+                    hint: 'Protect Banking & WhatsApp',
+                    done: Boolean(appLockStatus?.hasUsageStatsPermission),
+                    action: () => SentinelDeviceGuard.requestUsageStatsAccess(),
+                  },
+                  {
+                    id: 'overlay',
+                    label: '3. Floating Gemini Co-Pilot',
+                    hint: 'Overlay bubble across apps',
+                    done: Boolean(overlayStatus?.hasOverlayPermission),
+                    action: () => SentinelDeviceGuard.requestOverlayPermission(),
+                  },
+                ];
+                const completed = steps.filter((s) => s.done).length;
+                return (
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-[#0F1E2E] to-[#0B0F17] border border-cyan-500/30 space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-white flex items-center gap-1.5">
+                          <span>Mobile Protection Setup Wizard</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${completed === 3 ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/30' : 'bg-amber-950 text-amber-300 border border-amber-500/30'}`}>
+                            {completed}/3 Ready
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">One-time Android permission setup for full real-time mobile protection</div>
+                      </div>
+                      <button
+                        onClick={loadAndroidSecuritySuite}
+                        className="p-1.5 rounded-lg bg-[#0D121D] border border-[#1F2937] text-cyan-300 hover:text-white shrink-0"
+                        title="Refresh permission status"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-[#0B0F17] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-300"
+                        style={{ width: `${Math.round((completed / 3) * 100)}%` }}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {steps.map((st) => (
+                        <div key={st.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#0B0F17]/90 border border-[#1F2937]">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-200 truncate">{st.label}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{st.hint}</div>
+                          </div>
+                          {st.done ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-500/30 font-bold shrink-0">
+                              ACTIVE
+                            </span>
+                          ) : (
+                            <button
+                              onClick={st.action}
+                              className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-bold shrink-0"
+                            >
+                              Enable
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {completed < 3 && (
+                      <p className="text-[10px] text-amber-300/90 leading-relaxed bg-amber-950/20 border border-amber-500/20 rounded-lg p-2">
+                        Samsung / Android 14-16 Tip: If Notification or Usage Access appears grayed out on sideloaded APKs, open Phone <strong>Settings -&gt; Apps -&gt; SentinelGrid Defense -&gt; ⋮ (top right) -&gt; Allow restricted settings</strong>.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div className="flex items-center justify-between bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3 text-xs">
                 <div>
                   <div className="font-medium text-white">On-Device PackageManager Scanner</div>

@@ -3258,17 +3258,14 @@ def download_windows_portable():
 
 @app.get("/api/download/android-apk")
 def download_android_apk():
-    if not os.path.exists(APK_PATH):
-        # Look for compiled artifacts in android project
-        candidate_paths = [
-            os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk")),
-            os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "android", "app", "build", "outputs", "apk", "release", "app-release.apk"))
-        ]
-        for cp in candidate_paths:
-            if os.path.exists(cp):
+    release_apk = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "android", "app", "build", "outputs", "apk", "release", "app-release.apk"))
+    debug_apk = os.path.abspath(os.path.join(BASE_DIR, "..", "frontend", "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk"))
+    for cp in (release_apk, debug_apk):
+        if os.path.exists(cp):
+            if not os.path.exists(APK_PATH) or os.path.getmtime(cp) > os.path.getmtime(APK_PATH):
                 shutil.copy2(cp, APK_PATH)
-                break
-        
+            break
+
     if not os.path.exists(APK_PATH):
         raise HTTPException(
             status_code=404,
@@ -3280,6 +3277,33 @@ def download_android_apk():
         media_type="application/vnd.android.package-archive",
         filename="SentinelGrid_Defense_v1.0.apk"
     )
+
+@app.get("/privacy-policy")
+def privacy_policy_page():
+    """Store-compliant HTML Privacy Policy for Google Play & Samsung Galaxy Store submission."""
+    from fastapi.responses import HTMLResponse
+    html = """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SentinelGrid Defense - Privacy Policy</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:780px;margin:40px auto;padding:0 20px;line-height:1.6;color:#e2e8f0;background:#0b0f17;}h1,h2{color:#34d399;}code{background:#111827;padding:2px 6px;border-radius:4px;}</style>
+</head>
+<body>
+<h1>SentinelGrid Defense — Privacy Policy</h1>
+<p><strong>Effective Date:</strong> November 27, 2026 &nbsp;|&nbsp; <strong>Contact:</strong> bmwm25320@gmail.com</p>
+<p>SentinelGrid Defense is an endpoint security, antivirus, and privacy protection application for Android and Windows.</p>
+<h2>1. Permissions &amp; On-Device Data Processing</h2>
+<ul>
+<li><code>QUERY_ALL_PACKAGES</code>: Used exclusively on-device to inspect installed applications for sideloaded APKs, banking trojan permission combinations, and hidden stalkerware. Application inventories are never sold or uploaded to ad networks.</li>
+<li><code>BIND_NOTIFICATION_LISTENER_SERVICE</code>: Used locally on-device solely to extract URLs inside incoming notifications and warn the user of phishing links. Message text is never transmitted or stored off-device.</li>
+<li><code>PACKAGE_USAGE_STATS</code> &amp; <code>USE_BIOMETRIC</code>: Used strictly locally for the optional Biometric App Lock feature to protect user-selected apps.</li>
+<li><code>SYSTEM_ALERT_WINDOW</code>: Displays the user-initiated Gemini Security Co-Pilot floating overlay.</li>
+<li><code>ACCESS_FINE_LOCATION</code> / <code>ACCESS_COARSE_LOCATION</code>: Accessed strictly when the user triggers Anti-Theft location recovery.</li>
+</ul>
+<h2>2. Authentication &amp; Vault</h2>
+<p>User sign-in uses Google Sign-In via Firebase Authentication. Password Vault credentials are stored locally under the user's dedicated PIN; optional breach audits use k-anonymity (5-character SHA-1 hash prefix only) against Have I Been Pwned.</p>
+</body></html>"""
+    return HTMLResponse(content=html)
 
 # ==================== FRONTEND STATIC SPA HOSTING ====================
 def get_frontend_dist() -> Optional[str]:

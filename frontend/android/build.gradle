@@ -22,6 +22,9 @@ allprojects {
         google()
         mavenCentral()
     }
+    if (project != rootProject) {
+        project.layout.buildDirectory.set(new File(System.getProperty("java.io.tmpdir"), "sg_android_build/" + project.name))
+    }
 }
 
 task clean(type: Delete) {
