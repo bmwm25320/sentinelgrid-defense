@@ -225,7 +225,7 @@ def scan_scheduled_tasks_persistence() -> Dict[str, Any]:
         res = subprocess.run(
             ["schtasks", "/query", "/fo", "CSV", "/v"],
             capture_output=True, text=True, encoding="utf-8", errors="ignore",
-            timeout=12, creationflags=_subprocess_flags(),
+            timeout=25, creationflags=_subprocess_flags(),
         )
         tasks = parse_schtasks_csv(res.stdout or "")
         return {
