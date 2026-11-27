@@ -3,6 +3,8 @@ package com.sentinelgrid.defense;
 import android.Manifest;
 import android.app.ActivityManager;
 import android.app.AppOpsManager;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -37,6 +39,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.File;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -439,11 +442,19 @@ public class SentinelDeviceGuardPlugin extends Plugin {
             return plan;
         }
 
+        if (q.contains("clipboard") || q.contains("paste") || q.contains("privacy") || q.contains("camera") || q.contains("mic") || q.contains("spy") || q.contains("permission")) {
+            plan.analysis = "Privacy & Clipboard Shield can inspect dangerous pasted links and track spy permissions:";
+            plan.options.add(new AndroidTaskOption("opt_clip", "Inspect Clipboard Safety", "Checks copied text for phishing links & OTPs", "CHECK_CLIPBOARD", ""));
+            plan.options.add(new AndroidTaskOption("opt_scan", "Run Privacy & Stalkerware Audit", "Audits camera, mic & overlay apps", "SCAN_APPS", ""));
+            return plan;
+        }
+
         plan.analysis = "Gemini Background Co-Pilot is ready across apps. Select an action to execute:";
         plan.options.add(new AndroidTaskOption("opt_scan", "Scan Installed Apps & Stalkerware", "Audits sideloaded APKs & toxic permissions", "SCAN_APPS", ""));
+        plan.options.add(new AndroidTaskOption("opt_clip", "Inspect Clipboard Safety", "Detects phishing links or leaked tokens in clipboard", "CHECK_CLIPBOARD", ""));
         plan.options.add(new AndroidTaskOption("opt_boost", "Boost RAM & Clear Background Apps", "Frees phone memory safely", "BOOST_RAM", ""));
         plan.options.add(new AndroidTaskOption("opt_wifi", "Check Wi-Fi & DNS Security", "Inspects active connection safety", "CHECK_WIFI", ""));
-        plan.options.add(new AndroidTaskOption("opt_open", "Open Full SentinelGrid Suite", "Launches Vault, Breach Audit & Shields", "OPEN_APP", ""));
+        plan.options.add(new AndroidTaskOption("opt_open", "Open Full SentinelGrid Suite", "Launches Vault, Privacy Radar & Shields", "OPEN_APP", ""));
         return plan;
     }
 
@@ -866,5 +877,197 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         } catch (Exception e) {
             call.resolve(new JSObject().put("available", false));
         }
+    }
+
+    // ==================== POWER PRIVACY RADAR, CLIPBOARD & INSTALL ALERTS ====================
+
+    @PluginMethod
+    public void auditPrivacyPermissions(PluginCall call) {
+        Context ctx = getContext();
+        PackageManager pm = ctx.getPackageManager();
+        String selfPkg = ctx.getPackageName();
+
+        List<PackageInfo> packages;
+        try {
+            packages = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS);
+        } catch (Exception e) {
+            call.reject("Privacy audit failed: " + e.getMessage());
+            return;
+        }
+
+        JSArray cameraApps = new JSArray();
+        JSArray micApps = new JSArray();
+        JSArray locationApps = new JSArray();
+        JSArray smsApps = new JSArray();
+        JSArray accessibilityApps = new JSArray();
+        int cameraCount = 0, micCount = 0, bgLocCount = 0, smsCount = 0, accCount = 0;
+
+        for (PackageInfo pkg : packages) {
+            if (pkg.applicationInfo == null || selfPkg.equals(pkg.packageName)) continue;
+            boolean isSys = (pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+            if (isSys) continue;
+
+            Set<String> perms = new HashSet<>();
+            if (pkg.requestedPermissions != null) Collections.addAll(perms, pkg.requestedPermissions);
+
+            CharSequence lblSeq = pm.getApplicationLabel(pkg.applicationInfo);
+            String label = lblSeq != null ? lblSeq.toString() : pkg.packageName;
+
+            if (perms.contains("android.permission.CAMERA")) {
+                cameraCount++;
+                if (cameraApps.length() < 12) cameraApps.put(new JSObject().put("appName", label).put("packageName", pkg.packageName));
+            }
+            if (perms.contains("android.permission.RECORD_AUDIO")) {
+                micCount++;
+                if (micApps.length() < 12) micApps.put(new JSObject().put("appName", label).put("packageName", pkg.packageName));
+            }
+            if (perms.contains("android.permission.ACCESS_BACKGROUND_LOCATION")) {
+                bgLocCount++;
+                if (locationApps.length() < 12) locationApps.put(new JSObject().put("appName", label).put("packageName", pkg.packageName));
+            }
+            if (perms.contains("android.permission.READ_SMS") || perms.contains("android.permission.RECEIVE_SMS")) {
+                smsCount++;
+                if (smsApps.length() < 12) smsApps.put(new JSObject().put("appName", label).put("packageName", pkg.packageName));
+            }
+            if (perms.contains("android.permission.BIND_ACCESSIBILITY_SERVICE")) {
+                accCount++;
+                if (accessibilityApps.length() < 12) accessibilityApps.put(new JSObject().put("appName", label).put("packageName", pkg.packageName));
+            }
+        }
+
+        JSObject res = new JSObject();
+        res.put("cameraCount", cameraCount);
+        res.put("micCount", micCount);
+        res.put("bgLocationCount", bgLocCount);
+        res.put("smsCount", smsCount);
+        res.put("accessibilityCount", accCount);
+        res.put("cameraApps", cameraApps);
+        res.put("micApps", micApps);
+        res.put("bgLocationApps", locationApps);
+        res.put("smsApps", smsApps);
+        res.put("accessibilityApps", accessibilityApps);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        String pkg = call.getString("packageName", "");
+        if (pkg == null || pkg.trim().isEmpty()) {
+            call.reject("Missing packageName");
+            return;
+        }
+        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg.trim()));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(i);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void inspectClipboardSafety(PluginCall call) {
+        Context ctx = getContext();
+        JSObject res = new JSObject();
+        try {
+            ClipboardManager cm = (ClipboardManager) ctx.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm == null || !cm.hasPrimaryClip() || cm.getPrimaryClip() == null || cm.getPrimaryClip().getItemCount() == 0) {
+                res.put("hasText", false);
+                res.put("status", "SAFE");
+                res.put("riskScore", 0);
+                res.put("summary", "Clipboard is empty or protected.");
+                call.resolve(res);
+                return;
+            }
+            CharSequence seq = cm.getPrimaryClip().getItemAt(0).coerceToText(ctx);
+            String txt = seq != null ? seq.toString() : "";
+            List<String> urls = extractUrlsFromText(txt);
+            int maxRisk = 0;
+            String worstStatus = "SAFE";
+            String flaggedUrl = "";
+            for (String u : urls) {
+                UrlRiskEvaluation ev = evaluateUrlSafety(u);
+                if (ev.riskScore >= maxRisk) {
+                    maxRisk = ev.riskScore;
+                    worstStatus = ev.status;
+                    flaggedUrl = ev.url;
+                }
+            }
+            boolean looksSecret = txt.length() >= 8 && (txt.contains("AIza") || txt.contains("BEGIN PRIVATE KEY") || txt.matches("^[A-Za-z0-9!@#$%^&*]{12,}$"));
+            res.put("hasText", !txt.isEmpty());
+            res.put("urlsFound", urls.size());
+            res.put("flaggedUrl", flaggedUrl);
+            res.put("status", maxRisk >= 60 ? "DANGEROUS" : (maxRisk >= 25 ? "SUSPICIOUS" : (looksSecret ? "SENSITIVE" : "SAFE")));
+            res.put("riskScore", maxRisk);
+            res.put("summary", maxRisk >= 25
+                ? ("Clipboard contains risky link: " + flaggedUrl)
+                : (looksSecret ? "Clipboard holds sensitive password/token text — clear it after pasting." : "No phishing links found in clipboard."));
+            call.resolve(res);
+        } catch (Exception e) {
+            res.put("hasText", false);
+            res.put("status", "SAFE");
+            res.put("riskScore", 0);
+            res.put("summary", "Clipboard protected by Android privacy lock.");
+            call.resolve(res);
+        }
+    }
+
+    @PluginMethod
+    public void clearClipboard(PluginCall call) {
+        try {
+            ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    cm.clearPrimaryClip();
+                } else {
+                    cm.setPrimaryClip(ClipData.newPlainText("", ""));
+                }
+            }
+            call.resolve(new JSObject().put("cleared", true));
+        } catch (Exception e) {
+            call.resolve(new JSObject().put("cleared", false));
+        }
+    }
+
+    @PluginMethod
+    public void getInstallGuardAlerts(PluginCall call) {
+        SharedPreferences prefs = getContext().getSharedPreferences(NotificationPhishingService.PREFS_NAME, Context.MODE_PRIVATE);
+        JSArray arr;
+        try {
+            arr = new JSArray(prefs.getString(PackageInstallReceiver.KEY_INSTALL_ALERTS, "[]"));
+        } catch (Exception e) {
+            arr = new JSArray();
+        }
+        call.resolve(new JSObject().put("alerts", arr));
+    }
+
+    @PluginMethod
+    public void scanDownloadLeftovers(PluginCall call) {
+        File dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        int apkCount = 0;
+        long totalMb = 0;
+        JSArray items = new JSArray();
+        if (dlDir != null && dlDir.exists() && dlDir.isDirectory()) {
+            File[] files = dlDir.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (!f.isFile()) continue;
+                    String low = f.getName().toLowerCase(Locale.US);
+                    if (low.endsWith(".apk") || low.endsWith(".tmp") || f.length() > 25L * 1024L * 1024L) {
+                        apkCount++;
+                        long kb = f.length() / 1024L;
+                        totalMb += Math.max(0, kb / 1024L);
+                        if (items.length() < 15) {
+                            items.put(new JSObject()
+                                .put("name", f.getName())
+                                .put("sizeMb", Math.round((f.length() / (1024.0 * 1024.0)) * 10.0) / 10.0)
+                                .put("isApk", low.endsWith(".apk")));
+                        }
+                    }
+                }
+            }
+        }
+        JSObject res = new JSObject();
+        res.put("count", apkCount);
+        res.put("totalMb", totalMb);
+        res.put("files", items);
+        call.resolve(res);
     }
 }

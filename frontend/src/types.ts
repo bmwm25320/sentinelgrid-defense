@@ -555,6 +555,62 @@ export interface SafeMoneyLaunchResult {
   url_verdict: UrlCheckResult;
 }
 
+export interface ProcessThreatItem {
+  pid: number;
+  name: string;
+  cmdline: string;
+  exe: string;
+  risk_score: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | string;
+  mitre_id?: string;
+  reasons: string[];
+}
+
+export interface ProcessHuntResult {
+  status: 'ALERT' | 'CLEAN' | string;
+  processes_inspected: number;
+  threats_found: number;
+  threats: ProcessThreatItem[];
+  scanned_at: string;
+}
+
+export interface ScheduledTaskItem {
+  task_name: string;
+  command: string;
+  author: string;
+  status: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | string;
+}
+
+export interface ScheduledTasksResult {
+  supported: boolean;
+  suspicious_count: number;
+  tasks: ScheduledTaskItem[];
+  error?: string | null;
+  scanned_at: string;
+}
+
+export interface DnsShieldStatus {
+  enabled: boolean;
+  hosts_enforced?: boolean;
+  domains_count: number;
+  sample_domains?: string[];
+  note?: string;
+}
+
+export interface SnapshotItem {
+  name: string;
+  size_kb: number;
+}
+
+export interface SnapshotBackupResult {
+  status: string;
+  snapshot_name: string;
+  files_backed_up: number;
+  size_kb: number;
+  created_at: string;
+}
+
 
 
 

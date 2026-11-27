@@ -95,6 +95,53 @@ export interface AndroidDeviceTelemetry {
   installedPackagesCount: number;
 }
 
+export interface AndroidPrivacyAppEntry {
+  appName: string;
+  packageName: string;
+}
+
+export interface AndroidPrivacyAuditResult {
+  cameraCount: number;
+  micCount: number;
+  bgLocationCount: number;
+  smsCount: number;
+  accessibilityCount: number;
+  cameraApps: AndroidPrivacyAppEntry[];
+  micApps: AndroidPrivacyAppEntry[];
+  bgLocationApps: AndroidPrivacyAppEntry[];
+  smsApps: AndroidPrivacyAppEntry[];
+  accessibilityApps: AndroidPrivacyAppEntry[];
+}
+
+export interface AndroidClipboardSafetyResult {
+  hasText: boolean;
+  urlsFound?: number;
+  flaggedUrl?: string;
+  status: 'SAFE' | 'SUSPICIOUS' | 'DANGEROUS' | 'SENSITIVE';
+  riskScore: number;
+  summary: string;
+}
+
+export interface AndroidInstallGuardAlert {
+  appName: string;
+  packageName: string;
+  riskLevel: string;
+  riskScore: number;
+  timestamp: number;
+}
+
+export interface AndroidDownloadLeftoverFile {
+  name: string;
+  sizeMb: number;
+  isApk: boolean;
+}
+
+export interface AndroidDownloadLeftoversResult {
+  count: number;
+  totalMb: number;
+  files: AndroidDownloadLeftoverFile[];
+}
+
 export interface SentinelDeviceGuardPlugin {
   scanInstalledApps(): Promise<AndroidAppScanResult>;
   inspectWifiSecurity(): Promise<AndroidWifiStatus>;
@@ -120,6 +167,12 @@ export interface SentinelDeviceGuardPlugin {
   stopAntiTheftAlarm(): Promise<{ playing: boolean }>;
   getLastKnownLocation(): Promise<AndroidLocationResult>;
   getDeviceTelemetry(): Promise<AndroidDeviceTelemetry>;
+  auditPrivacyPermissions(): Promise<AndroidPrivacyAuditResult>;
+  openAppSettings(options: { packageName: string }): Promise<void>;
+  inspectClipboardSafety(): Promise<AndroidClipboardSafetyResult>;
+  clearClipboard(): Promise<{ cleared: boolean }>;
+  getInstallGuardAlerts(): Promise<{ alerts: AndroidInstallGuardAlert[] }>;
+  scanDownloadLeftovers(): Promise<AndroidDownloadLeftoversResult>;
 }
 
 export const SentinelDeviceGuard = registerPlugin<SentinelDeviceGuardPlugin>('SentinelDeviceGuard');

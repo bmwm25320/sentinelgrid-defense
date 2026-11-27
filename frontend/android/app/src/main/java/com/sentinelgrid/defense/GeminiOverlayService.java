@@ -429,6 +429,31 @@ public class GeminiOverlayService extends Service {
             statusText.setText("Result (" + eval.domain + "): " + eval.status + " (Risk: " + eval.riskScore + "/100)");
             return;
         }
+        if ("CHECK_CLIPBOARD".equals(opt.actionType)) {
+            try {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm == null || !cm.hasPrimaryClip() || cm.getPrimaryClip() == null || cm.getPrimaryClip().getItemCount() == 0) {
+                    statusText.setText("Clipboard is empty (Safe).");
+                    return;
+                }
+                CharSequence cs = cm.getPrimaryClip().getItemAt(0).coerceToText(this);
+                String text = cs != null ? cs.toString() : "";
+                List<String> urls = SentinelDeviceGuardPlugin.extractUrlsFromText(text);
+                int maxRisk = 0;
+                String worstStatus = "SAFE";
+                for (String u : urls) {
+                    SentinelDeviceGuardPlugin.UrlRiskEvaluation eval = SentinelDeviceGuardPlugin.evaluateUrlSafety(u);
+                    if (eval.riskScore > maxRisk) {
+                        maxRisk = eval.riskScore;
+                        worstStatus = eval.status;
+                    }
+                }
+                statusText.setText("Clipboard Check: " + urls.size() + " URL(s) · Status: " + worstStatus + " (Risk: " + maxRisk + "/100)");
+            } catch (Exception e) {
+                statusText.setText("Clipboard check completed (protected OS access).");
+            }
+            return;
+        }
         if ("SCAN_APPS".equals(opt.actionType)) {
             PackageManager pm = getPackageManager();
             List<PackageInfo> pkgs = pm.getInstalledPackages(PackageManager.GET_PERMISSIONS);

@@ -194,6 +194,50 @@ class TestWindowsActiveDefense(unittest.TestCase):
         self.assertEqual(plan_res.status_code, 200)
         self.assertTrue(any(opt["action_type"] == "open_safe_money" for opt in plan_res.json()["options"]))
 
+    def test_09_power_defense_lolbin_schtasks_dns_and_snapshots(self):
+        import power_defense
+        from fastapi.testclient import TestClient
+        import engine
+
+        lolbin = power_defense.evaluate_command_line_risk(
+            "powershell.exe",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            "powershell.exe -NoP -W Hidden -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAKQA=",
+            "winword.exe",
+        )
+        self.assertGreaterEqual(lolbin["risk_score"], 75)
+        self.assertEqual(lolbin["severity"], "CRITICAL")
+        self.assertTrue(len(lolbin["reasons"]) >= 2)
+
+        sample_csv = (
+            '"HostName","TaskName","Next Run Time","Status","Logon Mode","Last Run Time","Last Result","Author","Task To Run"\n'
+            '"PC","\\UpdaterSuspicious","N/A","Ready","Interactive","N/A","0","User","powershell.exe -enc AAAA -w hidden"\n'
+            '"PC","\\BenignTask","N/A","Ready","Interactive","N/A","0","Microsoft","C:\\Windows\\System32\\svchost.exe"\n'
+        )
+        parsed_tasks = power_defense.parse_schtasks_csv(sample_csv)
+        self.assertEqual(len(parsed_tasks), 1)
+        self.assertIn("UpdaterSuspicious", parsed_tasks[0]["task_name"])
+
+        snap = power_defense.create_protected_snapshot_backup()
+        self.assertEqual(snap["status"], "backed_up")
+        self.assertTrue(snap["snapshot_name"].startswith("sg_protected_backup_"))
+
+        client = TestClient(engine.app)
+        hunt_res = client.get("/api/security/process-hunt")
+        self.assertEqual(hunt_res.status_code, 200)
+        self.assertIn("processes_inspected", hunt_res.json())
+
+        dns_status = client.get("/api/network/dns-shield")
+        self.assertEqual(dns_status.status_code, 200)
+        self.assertGreater(dns_status.json()["domains_count"], 5)
+
+        priv_res = client.get("/privacy-policy")
+        self.assertEqual(priv_res.status_code, 200)
+        self.assertIn("SentinelGrid Defense", priv_res.text)
+
+        apk_res = client.get("/api/download/android-apk")
+        self.assertIn(apk_res.status_code, (200, 404))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

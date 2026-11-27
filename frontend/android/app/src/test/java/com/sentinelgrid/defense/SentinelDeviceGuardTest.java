@@ -122,4 +122,12 @@ public class SentinelDeviceGuardTest {
         assertFalse(SentinelDeviceGuardPlugin.isAppLockTarget("com.whatsapp", locked, unlocked, now));
         assertTrue(SentinelDeviceGuardPlugin.isAppLockTarget("com.whatsapp", locked, unlocked, 30_000L));
     }
+
+    @Test
+    public void testPrivacyAndClipboardPlanner() {
+        SentinelDeviceGuardPlugin.AndroidTaskPlan privacyPlan =
+            SentinelDeviceGuardPlugin.planAndroidTaskOptions("Check clipboard and camera privacy permissions");
+        assertTrue(privacyPlan.options.size() >= 2);
+        assertEquals("CHECK_CLIPBOARD", privacyPlan.options.get(0).actionType);
+    }
 }

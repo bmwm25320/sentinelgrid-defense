@@ -25,4 +25,6 @@ backend/releases/*.exe
 .env
 frontend/.env
 backend/blocked_ips.json
+backend/dns_shield_state.json
+backend/safe_backups/
 frontend/android/app/google-services.json

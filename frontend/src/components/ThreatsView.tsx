@@ -22,6 +22,8 @@ import {
   Lock,
   Volume2,
   MapPin,
+  Eye,
+  ClipboardCheck,
 } from 'lucide-react';
 import type { ShieldConfig, AlertItem, QuarantineItem, SmartScanState, UsbShieldStatus } from '../types';
 import { api } from '../api';
@@ -35,6 +37,10 @@ import {
   type AndroidAppLockStatus,
   type AndroidLocationResult,
   type AndroidOverlayStatus,
+  type AndroidPrivacyAuditResult,
+  type AndroidClipboardSafetyResult,
+  type AndroidInstallGuardAlert,
+  type AndroidDownloadLeftoversResult,
 } from '../plugins/sentinelDeviceGuard';
 
 interface ThreatsViewProps {
@@ -72,6 +78,11 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
   const [isFastScanOpen, setIsFastScanOpen] = useState(false);
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [androidPrivacyAudit, setAndroidPrivacyAudit] = useState<AndroidPrivacyAuditResult | null>(null);
+  const [auditingPrivacy, setAuditingPrivacy] = useState(false);
+  const [clipboardResult, setClipboardResult] = useState<AndroidClipboardSafetyResult | null>(null);
+  const [installAlerts, setInstallAlerts] = useState<AndroidInstallGuardAlert[]>([]);
+  const [downloadLeftovers, setDownloadLeftovers] = useState<AndroidDownloadLeftoversResult | null>(null);
   const [exclusions, setExclusions] = useState<string[]>([]);
   const [newExclusionPath, setNewExclusionPath] = useState('');
   const [loadingExclusions, setLoadingExclusions] = useState(false);
@@ -1044,6 +1055,159 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
                 )}
                 {androidActionMsg && (
                   <div className="text-[11px] text-emerald-300">{androidActionMsg}</div>
+                )}
+              </div>
+
+              {/* Privacy & Spyware Permission Radar + Real-Time APK Install Guard */}
+              <div className="bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Privacy & Spyware Permission Radar</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setAuditingPrivacy(true);
+                      try {
+                        const [priv, alertsRes] = await Promise.all([
+                          SentinelDeviceGuard.auditPrivacyPermissions(),
+                          SentinelDeviceGuard.getInstallGuardAlerts(),
+                        ]);
+                        setAndroidPrivacyAudit(priv);
+                        setInstallAlerts(alertsRes.alerts || []);
+                      } catch (e: any) {
+                        setAndroidActionMsg(`Privacy audit note: ${e.message}`);
+                      } finally {
+                        setAuditingPrivacy(false);
+                      }
+                    }}
+                    disabled={auditingPrivacy}
+                    className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-200 font-bold text-[11px] disabled:opacity-50"
+                  >
+                    {auditingPrivacy ? 'Auditing...' : 'Audit Permissions'}
+                  </button>
+                </div>
+
+                {androidPrivacyAudit && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-5 gap-1.5 text-center text-[10px]">
+                      <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400">Cam</div>
+                        <div className="font-bold text-white">{androidPrivacyAudit.cameraCount}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400">Mic</div>
+                        <div className="font-bold text-white">{androidPrivacyAudit.micCount}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400">BgGPS</div>
+                        <div className="font-bold text-amber-300">{androidPrivacyAudit.bgLocationCount}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400">SMS</div>
+                        <div className="font-bold text-red-300">{androidPrivacyAudit.smsCount}</div>
+                      </div>
+                      <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                        <div className="text-slate-400">A11y</div>
+                        <div className="font-bold text-cyan-300">{androidPrivacyAudit.accessibilityCount}</div>
+                      </div>
+                    </div>
+                    {[...(androidPrivacyAudit.smsApps || []), ...(androidPrivacyAudit.bgLocationApps || []), ...(androidPrivacyAudit.accessibilityApps || [])]
+                      .slice(0, 6)
+                      .map((item, idx) => (
+                        <div key={`${item.packageName}-${idx}`} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-900/70 border border-slate-800">
+                          <div className="min-w-0">
+                            <div className="text-white font-medium truncate">{item.appName}</div>
+                            <div className="text-[10px] text-slate-400 font-mono truncate">{item.packageName}</div>
+                          </div>
+                          <button
+                            onClick={() => SentinelDeviceGuard.openAppSettings({ packageName: item.packageName })}
+                            className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-200 text-[10px] font-bold shrink-0"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                {installAlerts.length > 0 && (
+                  <div className="pt-1 border-t border-slate-800 space-y-1">
+                    <div className="text-[10px] font-bold text-cyan-300">REAL-TIME PACKAGE INSTALL GUARD ALERTS</div>
+                    {installAlerts.slice(0, 3).map((al, idx) => (
+                      <div key={`${al.packageName}-${idx}`} className="flex items-center justify-between text-[11px] bg-slate-900/60 px-2 py-1 rounded">
+                        <span className="truncate text-white">{al.appName}</span>
+                        <span className={`font-bold ${al.riskLevel === 'SAFE' ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          {al.riskLevel} ({al.riskScore})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Clipboard Phishing Guard & Leftover APK Cleaner */}
+              <div className="bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3 space-y-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <ClipboardCheck className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Clipboard Phishing & APK Leftover Guard</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await SentinelDeviceGuard.inspectClipboardSafety();
+                          setClipboardResult(res);
+                        } catch (e: any) {
+                          setAndroidActionMsg(`Clipboard check note: ${e.message}`);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 font-bold text-[11px]"
+                    >
+                      Check Clipboard
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await SentinelDeviceGuard.clearClipboard();
+                        setClipboardResult({ hasText: false, status: 'SAFE', riskScore: 0, summary: 'Clipboard wiped cleanly.' });
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[11px]"
+                    >
+                      Wipe
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await SentinelDeviceGuard.scanDownloadLeftovers();
+                          setDownloadLeftovers(res);
+                        } catch (e: any) {
+                          setAndroidActionMsg(`Downloads scan note: ${e.message}`);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold text-[11px]"
+                    >
+                      Scan APKs
+                    </button>
+                  </div>
+                </div>
+
+                {clipboardResult && (
+                  <div className={`p-2 rounded-lg border text-[11px] ${
+                    clipboardResult.status === 'DANGEROUS'
+                      ? 'bg-red-950/30 border-red-500/40 text-red-200'
+                      : clipboardResult.status === 'SENSITIVE' || clipboardResult.status === 'SUSPICIOUS'
+                      ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                      : 'bg-emerald-950/25 border-emerald-500/30 text-emerald-200'
+                  }`}>
+                    <strong>{clipboardResult.status}:</strong> {clipboardResult.summary}
+                  </div>
+                )}
+
+                {downloadLeftovers && (
+                  <div className="p-2 rounded-lg bg-slate-900/70 border border-slate-800 text-[11px] text-slate-300">
+                    Downloads Scan: {downloadLeftovers.count} leftover APK/large file(s) ({downloadLeftovers.totalMb} MB total).
+                  </div>
                 )}
               </div>
             </div>

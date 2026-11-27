@@ -192,6 +192,9 @@ def _call_gemini_rest_for_options(
         "- scan_software_updates (audits outdated apps with known vulnerabilities via winget)\n"
         "- open_safe_money (params: {\"url\": \"...\"} - opens isolated banking browser)\n"
         "- hardware_privacy_audit (checks webcam, microphone, and ARP MITM status)\n"
+        "- hunt_processes (hunts encoded PowerShell, certutil, mshta LOLBins & Office spawns)\n"
+        "- toggle_dns_shield (params: {\"enabled\": true} - enables system-wide phishing DNS/HOSTS shield)\n"
+        "- backup_snapshot (creates an immutable ransomware recovery ZIP snapshot of protected files)\n"
         "- scan_usb (scans connected USB removable drives)\n"
         "- check_url (params: {\"url\": \"...\"})\n"
         "- block_ip (params: {\"ip\": \"...\", \"reason\": \"...\"})\n"
@@ -417,6 +420,37 @@ def _heuristic_options_planner(task: str, target_app: Dict[str, Any], device_sum
                     "impact": "SAFE",
                     "action_type": "navigate_tab",
                     "params": {"tab": "device"},
+                },
+            ],
+        }
+
+    if any(k in q for k in ("lolbin", "powershell", "hunt", "malware process", "script", "ransomware", "backup", "snapshot")):
+        return {
+            "analysis": f"Running deep behavioral inspection & recovery shield while `{app_name}` is focused. Pick an active defense step:",
+            "options": [
+                {
+                    "id": "opt_proc_hunt",
+                    "title": "Run Behavioral LOLBin Process Hunt",
+                    "description": "Hunts encoded PowerShell, mshta/certutil drops, and Office macro spawn chains.",
+                    "impact": "DEEP",
+                    "action_type": "hunt_processes",
+                    "params": {},
+                },
+                {
+                    "id": "opt_backup_snap",
+                    "title": "Create Ransomware Recovery Snapshot",
+                    "description": "Archives protected documents into an immutable ZIP backup.",
+                    "impact": "SAFE",
+                    "action_type": "backup_snapshot",
+                    "params": {},
+                },
+                {
+                    "id": "opt_dns_on",
+                    "title": "Enable DNS Malware/Phishing Shield",
+                    "description": "Arms system-wide malicious domain blocking across all browsers.",
+                    "impact": "SAFE",
+                    "action_type": "toggle_dns_shield",
+                    "params": {"enabled": True},
                 },
             ],
         }

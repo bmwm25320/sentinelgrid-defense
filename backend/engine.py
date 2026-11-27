@@ -44,6 +44,7 @@ if BASE_DIR not in sys.path:
 import active_defense
 import gemini_copilot
 import kaspersky_suite
+import power_defense
 from active_defense import (
     audit_vault_breaches,
     load_blocked_ips,
@@ -1957,6 +1958,10 @@ def check_url(payload: CheckUrlRequest):
         risk_score += 25
         reasons.append("Domain has an abnormally high number of subdomains (deep nesting).")
 
+    if power_defense.is_domain_blocked_by_dns_shield(hostname):
+        risk_score += 65
+        reasons.append("Domain matches SentinelGrid DNS/HOSTS Malware & Phishing Blocklist.")
+
     # Determine verdict
     if risk_score >= 60:
         verdict = "DANGEROUS"
@@ -2952,6 +2957,33 @@ def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_task
             "details": forensics,
         }
 
+    if action == "hunt_processes":
+        hunt = power_defense.hunt_behavioral_threats()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"LOLBin Hunt scanned {hunt['processes_inspected']} processes: {hunt['threats_found']} behavioral threat(s) flagged.",
+            "details": hunt,
+        }
+
+    if action == "toggle_dns_shield":
+        res = power_defense.set_dns_shield(bool(params.get("enabled", True)))
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": res.get("note", "DNS Shield updated."),
+            "details": res,
+        }
+
+    if action == "backup_snapshot":
+        snap = power_defense.create_protected_snapshot_backup()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Protected Ransomware Snapshot saved ({snap['files_backed_up']} files, {snap['size_kb']} KB): {snap['snapshot_name']}",
+            "details": snap,
+        }
+
     if action == "navigate_tab":
         tab_val = str(params.get("tab") or "home")
         return {
@@ -2974,6 +3006,39 @@ def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_task
 @app.get("/api/system/junk-scan")
 def scan_system_junk():
     return kaspersky_suite.scan_disk_junk()
+
+# ==================== POWER DEFENSE SUITE ENDPOINTS ====================
+
+@app.get("/api/security/process-hunt")
+def run_lolbin_process_hunt():
+    res = power_defense.hunt_behavioral_threats()
+    if res["threats_found"] > 0:
+        log_event("WARNING", "PROCESS_HUNT", f"Behavioral LOLBin hunt flagged {res['threats_found']} suspicious process(es).")
+    return res
+
+@app.get("/api/security/scheduled-tasks")
+def scan_windows_scheduled_tasks():
+    return power_defense.scan_scheduled_tasks_persistence()
+
+@app.get("/api/network/dns-shield")
+def get_windows_dns_shield():
+    return power_defense.get_dns_shield_status()
+
+@app.post("/api/network/dns-shield")
+def toggle_windows_dns_shield(payload: BootPersistenceRequest):
+    res = power_defense.set_dns_shield(payload.enabled)
+    log_event("INFO", "DNS_SHIELD", res.get("note", "DNS Shield state updated."))
+    return res
+
+@app.get("/api/system/snapshots")
+def get_protected_snapshots():
+    return {"snapshots": power_defense.list_snapshot_backups()}
+
+@app.post("/api/system/snapshot-backup")
+def create_protected_snapshot():
+    res = power_defense.create_protected_snapshot_backup()
+    log_event("SUCCESS", "SNAPSHOT_BACKUP", f"Created immutable snapshot {res['snapshot_name']} ({res['files_backed_up']} files).")
+    return res
 
 @app.post("/api/system/junk-clean")
 def clean_system_junk(payload: Optional[JunkCleanRequest] = None):

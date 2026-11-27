@@ -16,6 +16,8 @@ import {
   PackageCheck,
   Power,
   AlertOctagon,
+  Terminal,
+  Archive,
 } from 'lucide-react';
 import type {
   DeviceAudit,
@@ -26,6 +28,10 @@ import type {
   DiskJunkScanResult,
   ManagedStartupItem,
   SoftwareScanResult,
+  ProcessHuntResult,
+  ScheduledTasksResult,
+  SnapshotItem,
+  SnapshotBackupResult,
 } from '../types';
 import { api } from '../api';
 import { SentinelDeviceGuard, isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
@@ -62,6 +68,13 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
   const [isScanningSoftware, setIsScanningSoftware] = useState(false);
   const [patchingPkgId, setPatchingPkgId] = useState<string | null>(null);
   const [softwareNotice, setSoftwareNotice] = useState<string | null>(null);
+  const [processHunt, setProcessHunt] = useState<ProcessHuntResult | null>(null);
+  const [huntingProcesses, setHuntingProcesses] = useState(false);
+  const [schtasksAudit, setSchtasksAudit] = useState<ScheduledTasksResult | null>(null);
+  const [scanningTasks, setScanningTasks] = useState(false);
+  const [snapshots, setSnapshots] = useState<SnapshotItem[]>([]);
+  const [creatingSnapshot, setCreatingSnapshot] = useState(false);
+  const [snapshotNotice, setSnapshotNotice] = useState<string | null>(null);
   const isAndroidApp = isAndroidNativeApp();
 
   useEffect(() => {
@@ -69,8 +82,67 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
     loadRamDiagnostics();
     if (!isAndroidApp) {
       loadKasperskySuitePanels();
+      loadPowerDefensePanels();
     }
   }, []);
+
+  const loadPowerDefensePanels = async () => {
+    try {
+      const [huntRes, snapRes] = await Promise.allSettled([
+        api.huntBehavioralThreats(),
+        api.listSnapshotBackups(),
+      ]);
+      if (huntRes.status === 'fulfilled') setProcessHunt(huntRes.value);
+      if (snapRes.status === 'fulfilled') setSnapshots(snapRes.value.snapshots || []);
+    } catch {
+      // Ignore startup fetch errors
+    }
+  };
+
+  const handleRunProcessHunt = async () => {
+    setHuntingProcesses(true);
+    try {
+      const res = await api.huntBehavioralThreats();
+      setProcessHunt(res);
+    } catch (e: any) {
+      setNotice(`LOLBin hunt note: ${e.message}`);
+    } finally {
+      setHuntingProcesses(false);
+    }
+  };
+
+  const handleScanScheduledTasks = async () => {
+    setScanningTasks(true);
+    try {
+      const res = await api.scanScheduledTasks();
+      setSchtasksAudit(res);
+    } catch (e: any) {
+      setNotice(`Scheduled tasks scan note: ${e.message}`);
+    } finally {
+      setScanningTasks(false);
+    }
+  };
+
+  const handleCreateSnapshot = async () => {
+    setCreatingSnapshot(true);
+    setSnapshotNotice(null);
+    try {
+      const res: SnapshotBackupResult = await api.createSnapshotBackup();
+      if (res.status === 'backed_up') {
+        setSnapshotNotice(
+          `Snapshot ${res.snapshot_name} sealed (${res.files_backed_up} files · ${res.size_kb} KB at ${res.created_at})`
+        );
+        const listRes = await api.listSnapshotBackups();
+        setSnapshots(listRes.snapshots || []);
+      } else {
+        setSnapshotNotice('Snapshot created.');
+      }
+    } catch (e: any) {
+      setSnapshotNotice(`Snapshot error: ${e.message}`);
+    } finally {
+      setCreatingSnapshot(false);
+    }
+  };
 
   const loadKasperskySuitePanels = async () => {
     try {
@@ -776,6 +848,140 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
               >
                 <div className={`w-4 h-4 rounded-full bg-white transition-transform ${bootAutoStart ? 'translate-x-6' : 'translate-x-0'}`} />
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Power Defense: LOLBin Process Hunter, Scheduled Tasks & Ransomware Snapshot Backup (Desktop only) */}
+      {!isAndroidApp && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-[#111827]/90 border border-[#1F2937] rounded-2xl p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                  <Terminal className="w-5 h-5 text-red-400" />
+                  <span>LOLBin Behavioral Hunter & Persistence</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Detects encoded PowerShell, script drops, Office child shells, and malicious Scheduled Tasks.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRunProcessHunt}
+                  disabled={huntingProcesses}
+                  className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${huntingProcesses ? 'animate-spin' : ''}`} />
+                  <span>{huntingProcesses ? 'Hunting...' : 'Hunt Processes'}</span>
+                </button>
+                <button
+                  onClick={handleScanScheduledTasks}
+                  disabled={scanningTasks}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-xs font-semibold disabled:opacity-50"
+                >
+                  {scanningTasks ? 'Auditing...' : 'Audit Tasks'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
+                <div className="text-slate-400">Processes Inspected</div>
+                <div className="text-lg font-bold text-white mt-0.5">{processHunt?.processes_inspected ?? '—'}</div>
+                <div className={`text-[11px] mt-0.5 ${(processHunt?.threats_found ?? 0) > 0 ? 'text-red-400 font-semibold' : 'text-emerald-400'}`}>
+                  {processHunt ? `${processHunt.threats_found} suspicious command line(s)` : 'Ready to hunt'}
+                </div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
+                <div className="text-slate-400">Scheduled Tasks</div>
+                <div className="text-lg font-bold text-white mt-0.5">
+                  {schtasksAudit ? (schtasksAudit.suspicious_count > 0 ? schtasksAudit.suspicious_count : '0') : '—'}
+                </div>
+                <div className={`text-[11px] mt-0.5 ${(schtasksAudit?.suspicious_count ?? 0) > 0 ? 'text-amber-300 font-semibold' : 'text-slate-400'}`}>
+                  {schtasksAudit ? `${schtasksAudit.suspicious_count} persistence flag(s)` : 'Tap Audit Tasks'}
+                </div>
+              </div>
+            </div>
+
+            {processHunt && processHunt.threats.length > 0 && (
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {processHunt.threats.map((t) => (
+                  <div key={`${t.pid}-${t.name}`} className="p-2.5 rounded-xl bg-red-950/25 border border-red-500/35 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-white">{t.name} (PID {t.pid})</span>
+                      <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-300 font-bold text-[10px]">
+                        {t.severity} ({t.risk_score})
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-mono truncate mt-1">{t.cmdline || t.exe}</div>
+                    <div className="text-[11px] text-red-300 mt-1">{t.reasons.join(' · ')}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {schtasksAudit && schtasksAudit.tasks.length > 0 && (
+              <div className="space-y-2 max-h-36 overflow-y-auto">
+                {schtasksAudit.tasks.map((st, idx) => (
+                  <div key={`${st.task_name}-${idx}`} className="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-amber-200 truncate">{st.task_name}</span>
+                      <span className="text-[10px] font-bold text-amber-300">{st.severity}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 font-mono truncate mt-0.5">{st.command}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Author: {st.author} · Status: {st.status}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-[#111827]/90 border border-[#1F2937] rounded-2xl p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-white flex items-center gap-2">
+                  <Archive className="w-5 h-5 text-emerald-400" />
+                  <span>Anti-Ransomware Snapshot Vault</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Creates sealed ZIP snapshot backups of the Protected Zone before ransomware strikes.
+                </p>
+              </div>
+              <button
+                onClick={handleCreateSnapshot}
+                disabled={creatingSnapshot}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Archive className="w-3.5 h-3.5" />
+                <span>{creatingSnapshot ? 'Creating Backup...' : 'Create Snapshot'}</span>
+              </button>
+            </div>
+
+            {snapshotNotice && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200">
+                {snapshotNotice}
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-44 overflow-y-auto">
+              {snapshots.length === 0 ? (
+                <div className="text-xs text-slate-400 p-3 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
+                  No snapshots created yet. Click <strong>Create Snapshot</strong> to seal a protected backup copy.
+                </div>
+              ) : (
+                snapshots.map((snap) => (
+                  <div key={snap.name} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2937] text-xs">
+                    <div className="min-w-0">
+                      <div className="font-mono text-white truncate">{snap.name}</div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-semibold shrink-0">
+                      {snap.size_kb} KB
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

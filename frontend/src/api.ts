@@ -680,4 +680,40 @@ export const api = {
   },
 
   getBrowserExtensionUrl: (): string => `${BASE_URL}/api/download/browser-extension`,
+
+  huntBehavioralThreats: async (): Promise<import('./types').ProcessHuntResult> => {
+    const res = await fetch(`${BASE_URL}/api/security/process-hunt`);
+    return handleResponse<import('./types').ProcessHuntResult>(res);
+  },
+
+  scanScheduledTasks: async (): Promise<import('./types').ScheduledTasksResult> => {
+    const res = await fetch(`${BASE_URL}/api/security/scheduled-tasks`);
+    return handleResponse<import('./types').ScheduledTasksResult>(res);
+  },
+
+  getDnsShieldStatus: async (): Promise<import('./types').DnsShieldStatus> => {
+    const res = await fetch(`${BASE_URL}/api/network/dns-shield`);
+    return handleResponse<import('./types').DnsShieldStatus>(res);
+  },
+
+  setDnsShield: async (enabled: boolean): Promise<import('./types').DnsShieldStatus> => {
+    const res = await fetch(`${BASE_URL}/api/network/dns-shield`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    return handleResponse<import('./types').DnsShieldStatus>(res);
+  },
+
+  listSnapshotBackups: async (): Promise<{ snapshots: import('./types').SnapshotItem[] }> => {
+    const res = await fetch(`${BASE_URL}/api/system/snapshots`);
+    return handleResponse<{ snapshots: import('./types').SnapshotItem[] }>(res);
+  },
+
+  createSnapshotBackup: async (): Promise<import('./types').SnapshotBackupResult> => {
+    const res = await fetch(`${BASE_URL}/api/system/snapshot-backup`, {
+      method: 'POST',
+    });
+    return handleResponse<import('./types').SnapshotBackupResult>(res);
+  },
 };

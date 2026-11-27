@@ -28,6 +28,7 @@ import type {
   NetworkShieldStatus,
   SafeMoneySite,
   SafeMoneyLaunchResult,
+  DnsShieldStatus,
 } from '../types';
 import { api } from '../api';
 import {
@@ -61,18 +62,24 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
   const [launchingSafeMoney, setLaunchingSafeMoney] = useState(false);
   const [safeMoneyResult, setSafeMoneyResult] = useState<SafeMoneyLaunchResult | null>(null);
   const [safeMoneyError, setSafeMoneyError] = useState<string | null>(null);
+  const [dnsShield, setDnsShield] = useState<DnsShieldStatus | null>(null);
+  const [togglingDnsShield, setTogglingDnsShield] = useState(false);
   const isAndroid = isAndroidNativeApp();
 
   const loadNetworkShield = async () => {
     setRefreshingShield(true);
     try {
-      const [data, sitesRes] = await Promise.all([
+      const [data, sitesRes, dnsRes] = await Promise.all([
         api.getNetworkShieldStatus(),
         api.getSafeMoneySites().catch(() => ({ sites: [] })),
+        api.getDnsShieldStatus().catch(() => null),
       ]);
       setShieldStatus(data);
       if (sitesRes.sites?.length) {
         setSafeMoneySites(sitesRes.sites);
+      }
+      if (dnsRes) {
+        setDnsShield(dnsRes);
       }
     } catch {
       // Standalone Android or offline mode
@@ -640,6 +647,45 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             <Download className="w-4 h-4" />
             <span>Download SentinelGrid Web Shield Extension (.zip)</span>
           </a>
+
+          {/* System-Wide DNS / HOSTS Phishing & Malware Blocker */}
+          <div className="p-3.5 rounded-xl bg-[#0B0F17] border border-[#1F2937] space-y-2 mt-2">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>System-Wide DNS / HOSTS Phishing Sinkhole</span>
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Blocks {dnsShield?.domains_count ?? 14} known phishing, drainer & malware domains across all browsers.
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  setTogglingDnsShield(true);
+                  try {
+                    const updated = await api.setDnsShield(!(dnsShield?.enabled ?? false));
+                    setDnsShield(updated);
+                  } catch (e: any) {
+                    alert(`DNS Shield error: ${e.message}`);
+                  } finally {
+                    setTogglingDnsShield(false);
+                  }
+                }}
+                disabled={togglingDnsShield}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-colors ${
+                  dnsShield?.enabled
+                    ? 'bg-emerald-500 text-slate-950'
+                    : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                } disabled:opacity-50`}
+              >
+                {togglingDnsShield ? 'Updating...' : dnsShield?.enabled ? 'ACTIVE' : 'ENABLE'}
+              </button>
+            </div>
+            {dnsShield?.note && (
+              <div className="text-[11px] text-slate-400">{dnsShield.note}</div>
+            )}
+          </div>
         </div>
       </div>
       )}
