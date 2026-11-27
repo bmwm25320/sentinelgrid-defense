@@ -9,7 +9,6 @@ import { PasswordVaultView } from './components/PasswordVaultView';
 import { AuthGate } from './components/AuthGate';
 import { AdminAuditView } from './components/AdminAuditView';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { MobileApkModal } from './components/MobileApkModal';
 import { SettingsModal } from './components/SettingsModal';
 import { GeminiBackgroundCopilot } from './components/GeminiBackgroundCopilot';
 import { api } from './api';
@@ -44,7 +43,6 @@ export default function App() {
   });
   const [connected, setConnected] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isMobileModalOpen, setIsMobileModalOpen] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanState, setScanState] = useState<SmartScanState | null>(null);
   const isAndroidApp = isAndroidNativeApp();
@@ -423,15 +421,16 @@ export default function App() {
                   <span className="hidden sm:inline">Windows Installer (.EXE)</span>
                 </a>
 
-                {/* Download Mobile APK Button */}
-                <button
-                  onClick={() => setIsMobileModalOpen(true)}
+                {/* Direct Mobile APK Download Link (zero popups/questions) */}
+                <a
+                  href={api.getAndroidApkUrl()}
+                  download="SentinelGrid_Defense_v1.0.apk"
                   className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors shadow-sm"
-                  title="Download Android APK package"
+                  title="Download Android APK directly"
                 >
                   <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="hidden sm:inline">Get Mobile App (.APK)</span>
-                </button>
+                </a>
               </>
             ) : (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300">
@@ -556,12 +555,6 @@ export default function App() {
           </div>
         </main>
       </div>
-
-      {/* Mobile APK Download Modal */}
-      <MobileApkModal
-        isOpen={isMobileModalOpen}
-        onClose={() => setIsMobileModalOpen(false)}
-      />
 
       {/* Global Settings & API Key Modal */}
       <SettingsModal
