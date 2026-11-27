@@ -128,6 +128,17 @@ public class SentinelDeviceGuardTest {
         SentinelDeviceGuardPlugin.AndroidTaskPlan privacyPlan =
             SentinelDeviceGuardPlugin.planAndroidTaskOptions("Check clipboard and camera privacy permissions");
         assertTrue(privacyPlan.options.size() >= 2);
-        assertEquals("CHECK_CLIPBOARD", privacyPlan.options.get(0).actionType);
+        assertEquals("CHECK_SCREEN_SPY", privacyPlan.options.get(0).actionType);
+        assertEquals("CHECK_CLIPBOARD", privacyPlan.options.get(1).actionType);
+
+        SentinelDeviceGuardPlugin.CertificateRiskEvaluation debugCert =
+            SentinelDeviceGuardPlugin.evaluateApkCertificateRisk("com.fake.bank", true, "CN=Android Debug,O=Android");
+        assertTrue(debugCert.isDebugKey);
+        assertEquals("HIGH", debugCert.riskLevel);
+
+        SentinelDeviceGuardPlugin.CertificateRiskEvaluation prodCert =
+            SentinelDeviceGuardPlugin.evaluateApkCertificateRisk("com.sentinelgrid.defense", false, "CN=SentinelGrid,O=TechCarnival");
+        assertFalse(prodCert.isDebugKey);
+        assertEquals("TRUSTED", prodCert.riskLevel);
     }
 }

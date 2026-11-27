@@ -27,4 +27,6 @@ frontend/.env
 backend/blocked_ips.json
 backend/dns_shield_state.json
 backend/safe_backups/
+backend/deception_state.json
+backend/deception_traps/
 frontend/android/app/google-services.json

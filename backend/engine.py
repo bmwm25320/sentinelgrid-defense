@@ -45,6 +45,7 @@ import active_defense
 import gemini_copilot
 import kaspersky_suite
 import power_defense
+import deception_grid
 from active_defense import (
     audit_vault_breaches,
     load_blocked_ips,
@@ -1071,6 +1072,38 @@ if docs_canary and os.path.exists(docs_canary):
         log_event("SUCCESS", "CANARY", f"Documents canary watch active on: {docs_canary}")
     except Exception as e:
         log_event("WARNING", "CANARY", f"Could not schedule documents canary: {e}")
+
+# 2b. Cyber Deception HoneyTokens Tripwire & Instant Auto-Heal
+def _on_honeytoken_breach(record: Dict[str, Any]) -> None:
+    alert = {
+        "id": str(uuid.uuid4())[:8],
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "threat_name": "Deception.HoneyToken.TrapTriggered",
+        "simple_title": f"Cyber Deception Trap Triggered ({record.get('trap_name')})",
+        "simple_description": (
+            f"Unauthorized {record.get('event_type')} on decoy credential '{record.get('trap_name')}'. "
+            f"SentinelGrid quarantined tampering and auto-healed the trap in {record.get('reaction_ms')}ms."
+        ),
+        "mitre_id": record.get("mitre_id", "T1552.001"),
+        "mitre_technique": "Unsecured Credentials: Bait HoneyToken Tripped",
+        "severity": "CRITICAL",
+        "process_name": "Watchdog Deception Grid",
+        "pid": 0,
+        "file_path": record.get("trap_name", ""),
+        "reaction_time_ms": f"{record.get('reaction_ms', 1)}ms",
+        "detection_layer": "Deception Grid - Cyber HoneyToken Auto-Heal",
+        "action_taken": "AUTO_HEALED",
+        "sha256": record.get("restored_sha256", ""),
+        "status": "BLOCKED",
+    }
+    alerts_store.insert(0, alert)
+    log_event("CRITICAL", "DECEPTION", f"HoneyToken trap tripped & auto-healed: {record.get('trap_name')}")
+
+try:
+    deception_dir = deception_grid.attach_honeytoken_watchdog(observer, on_breach_callback=_on_honeytoken_breach)
+    log_event("SUCCESS", "DECEPTION", f"Cyber Deception HoneyToken Grid armed at: {deception_dir}")
+except Exception as e:
+    log_event("WARNING", "DECEPTION", f"HoneyToken watchdog notice: {e}")
 
 # 3. Real-Time Downloads, Temp, and Startup Shields
 monitored_dirs = [
@@ -2984,6 +3017,43 @@ def execute_gemini_copilot_option(payload: GeminiExecuteRequest, background_task
             "details": snap,
         }
 
+    if action == "deploy_honeytokens":
+        dep = deception_grid.deploy_honeytokens(force_restore=True)
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": f"Cyber Deception Grid armed with {dep['intact_count']}/{dep['traps_count']} intact HoneyToken traps.",
+            "details": dep,
+        }
+
+    if action == "simulate_honeytoken_trap":
+        sim = deception_grid.simulate_honeytoken_breach()
+        _on_honeytoken_breach({
+            "trap_name": sim["trap_name"],
+            "event_type": "SIMULATED_TAMPER",
+            "reaction_ms": sim["reaction_ms"],
+            "mitre_id": sim["mitre_id"],
+            "restored_sha256": sim["restored_sha256"],
+        })
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": sim["summary"],
+            "details": sim,
+        }
+
+    if action == "audit_binary_signatures":
+        sig = deception_grid.audit_running_binary_signatures()
+        return {
+            "status": "executed",
+            "action_type": action,
+            "summary": (
+                f"Authenticode Audit checked {sig['checked_count']} third-party binaries: "
+                f"{sig['signed_valid_count']} trusted signed, {sig['unsigned_or_risky_count']} unsigned/risky."
+            ),
+            "details": sig,
+        }
+
     if action == "navigate_tab":
         tab_val = str(params.get("tab") or "home")
         return {
@@ -3038,6 +3108,40 @@ def get_protected_snapshots():
 def create_protected_snapshot():
     res = power_defense.create_protected_snapshot_backup()
     log_event("SUCCESS", "SNAPSHOT_BACKUP", f"Created immutable snapshot {res['snapshot_name']} ({res['files_backed_up']} files).")
+    return res
+
+# ==================== CYBER DECEPTION & ZERO-TRUST FORENSICS ENDPOINTS ====================
+
+@app.get("/api/deception/status")
+def get_deception_grid_status():
+    return deception_grid.get_honeytoken_status()
+
+@app.post("/api/deception/deploy")
+def deploy_deception_traps():
+    res = deception_grid.deploy_honeytokens(force_restore=True)
+    log_event("SUCCESS", "DECEPTION", f"HoneyToken Deception Grid verified ({res['intact_count']}/{res['traps_count']} armed).")
+    return res
+
+@app.post("/api/deception/simulate-breach")
+def simulate_deception_trap_breach():
+    res = deception_grid.simulate_honeytoken_breach()
+    _on_honeytoken_breach({
+        "trap_name": res["trap_name"],
+        "event_type": "SIMULATED_TAMPER_AND_EXFIL",
+        "reaction_ms": res["reaction_ms"],
+        "mitre_id": res["mitre_id"],
+        "restored_sha256": res["restored_sha256"],
+    })
+    return res
+
+@app.get("/api/security/signature-audit")
+def audit_windows_authenticode_signatures():
+    res = deception_grid.audit_running_binary_signatures()
+    log_event(
+        "INFO",
+        "SIGNATURE_AUDIT",
+        f"Authenticode audit verified {res['checked_count']} processes ({res['unsigned_or_risky_count']} unsigned/risky).",
+    )
     return res
 
 @app.post("/api/system/junk-clean")

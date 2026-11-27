@@ -429,6 +429,20 @@ public class GeminiOverlayService extends Service {
             statusText.setText("Result (" + eval.domain + "): " + eval.status + " (Risk: " + eval.riskScore + "/100)");
             return;
         }
+        if ("CHECK_SCREEN_SPY".equals(opt.actionType)) {
+            android.hardware.display.DisplayManager dm =
+                (android.hardware.display.DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
+            int nonDefault = 0;
+            if (dm != null) {
+                for (android.view.Display d : dm.getDisplays()) {
+                    if (d.getDisplayId() != android.view.Display.DEFAULT_DISPLAY) nonDefault++;
+                }
+            }
+            statusText.setText(nonDefault > 0
+                ? ("WARNING: " + nonDefault + " active virtual/screen-mirroring display detected!")
+                : "Screen-Spy Guard Clear: No active screen mirroring or virtual RAT display.");
+            return;
+        }
         if ("CHECK_CLIPBOARD".equals(opt.actionType)) {
             try {
                 android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);

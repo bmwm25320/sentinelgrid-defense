@@ -142,6 +142,39 @@ export interface AndroidDownloadLeftoversResult {
   files: AndroidDownloadLeftoverFile[];
 }
 
+export interface AndroidApkCertEntry {
+  appName: string;
+  packageName: string;
+  sha256: string;
+  signerCn: string;
+  isDebuggable: boolean;
+  isDebugKey: boolean;
+  riskLevel: 'HIGH' | 'TRUSTED' | string;
+  reason: string;
+}
+
+export interface AndroidAppCertificatesResult {
+  auditedCount: number;
+  debugSignedCount: number;
+  debuggableCount: number;
+  apps: AndroidApkCertEntry[];
+}
+
+export interface AndroidScreenSpyStatus {
+  activeVirtualDisplays: number;
+  screenMirroringDetected: boolean;
+  remoteSupportAppsFound: string[];
+  displays: {
+    displayId: number;
+    name: string;
+    isDefault: boolean;
+    isPresentation: boolean;
+    isPrivate: boolean;
+  }[];
+  riskLevel: 'CRITICAL' | 'MEDIUM' | 'SAFE' | string;
+  summary: string;
+}
+
 export interface SentinelDeviceGuardPlugin {
   scanInstalledApps(): Promise<AndroidAppScanResult>;
   inspectWifiSecurity(): Promise<AndroidWifiStatus>;
@@ -173,6 +206,8 @@ export interface SentinelDeviceGuardPlugin {
   clearClipboard(): Promise<{ cleared: boolean }>;
   getInstallGuardAlerts(): Promise<{ alerts: AndroidInstallGuardAlert[] }>;
   scanDownloadLeftovers(): Promise<AndroidDownloadLeftoversResult>;
+  auditAppCertificates(): Promise<AndroidAppCertificatesResult>;
+  inspectScreenSpyStatus(): Promise<AndroidScreenSpyStatus>;
 }
 
 export const SentinelDeviceGuard = registerPlugin<SentinelDeviceGuardPlugin>('SentinelDeviceGuard');

@@ -6,6 +6,7 @@ import { NetworkView } from './components/NetworkView';
 import { DeviceHealthView } from './components/DeviceHealthView';
 import { AssistantView } from './components/AssistantView';
 import { PasswordVaultView } from './components/PasswordVaultView';
+import { DeceptionForensicsView } from './components/DeceptionForensicsView';
 import { AuthGate } from './components/AuthGate';
 import { AdminAuditView } from './components/AdminAuditView';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -402,6 +403,7 @@ export default function App() {
               {activeTab === 'network' && 'Firewall & Network Protection'}
               {activeTab === 'device' && 'Device Health & Performance'}
               {activeTab === 'vault' && 'Encrypted Password Vault'}
+              {activeTab === 'deception' && 'Cyber Deception & Zero-Trust Forensics'}
               {activeTab === 'assistant' && 'AI Security Assistant'}
               {activeTab === 'admin_audit' && 'Admin Central Audit Center'}
             </h2>
@@ -534,6 +536,10 @@ export default function App() {
 
             {activeTab === 'vault' && (
               <PasswordVaultView user={currentUser} initialPin={sessionVaultPin} />
+            )}
+
+            {activeTab === 'deception' && (
+              <DeceptionForensicsView onDataUpdated={fetchAllData} />
             )}
 
             {activeTab === 'assistant' && (

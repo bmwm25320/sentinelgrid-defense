@@ -238,6 +238,42 @@ class TestWindowsActiveDefense(unittest.TestCase):
         apk_res = client.get("/api/download/android-apk")
         self.assertIn(apk_res.status_code, (200, 404))
 
+    def test_10_cyber_deception_and_authenticode_forensics(self):
+        import deception_grid
+        from fastapi.testclient import TestClient
+        import engine
+
+        dep = deception_grid.deploy_honeytokens(force_restore=True)
+        self.assertTrue(dep["armed"])
+        self.assertEqual(dep["intact_count"], dep["traps_count"])
+
+        sim = deception_grid.simulate_honeytoken_breach("aws_prod_master_keys.env")
+        self.assertEqual(sim["status"], "INTERCEPTED_AND_HEALED")
+        self.assertTrue(sim["healed"])
+        self.assertNotEqual(sim["tampered_sha256"], sim["restored_sha256"])
+
+        sig_eval = deception_grid.evaluate_authenticode_record(
+            "evil.exe",
+            r"C:\Users\Public\evil.exe",
+            "NotSigned",
+            "",
+        )
+        self.assertEqual(sig_eval["trust_level"], "HIGH_RISK_UNSIGNED")
+        self.assertGreaterEqual(sig_eval["risk_score"], 70)
+
+        client = TestClient(engine.app)
+        status_res = client.get("/api/deception/status")
+        self.assertEqual(status_res.status_code, 200)
+        self.assertTrue(status_res.json()["armed"])
+
+        sim_res = client.post("/api/deception/simulate-breach")
+        self.assertEqual(sim_res.status_code, 200)
+        self.assertTrue(sim_res.json()["healed"])
+
+        sig_res = client.get("/api/security/signature-audit")
+        self.assertEqual(sig_res.status_code, 200)
+        self.assertIn("checked_count", sig_res.json())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

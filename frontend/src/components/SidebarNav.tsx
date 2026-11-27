@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   KeyRound,
   Database,
+  Fingerprint,
 } from 'lucide-react';
 import type { DeviceAudit, AlertItem, AuthUser } from '../types';
 import { ADMIN_EMAIL } from '../firebase';
@@ -73,6 +74,13 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       icon: KeyRound,
       badge: 'AES-256',
       badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+    },
+    {
+      id: 'deception',
+      label: 'Deception & Forensics',
+      icon: Fingerprint,
+      badge: 'ZERO-TRUST',
+      badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
     },
     {
       id: 'assistant',
@@ -188,7 +196,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       {/* Responsive Android / Mobile Bottom Navigation Bar */}
       <nav
         aria-label="Mobile Navigation"
-        className={`md:hidden fixed bottom-0 inset-x-0 bg-[#0D121D]/95 backdrop-blur-md border-t border-[#1F2937] z-30 grid ${isAdmin ? 'grid-cols-8' : 'grid-cols-7'} gap-0.5 px-1 py-1.5`}
+        className="md:hidden fixed bottom-0 inset-x-0 bg-[#0D121D]/95 backdrop-blur-md border-t border-[#1F2937] z-30 flex items-center justify-around gap-0.5 px-1 py-1.5 overflow-x-auto"
       >
         {navItems.map((item) => {
           const Icon = item.icon;

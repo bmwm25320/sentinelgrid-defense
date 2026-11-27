@@ -195,6 +195,9 @@ def _call_gemini_rest_for_options(
         "- hunt_processes (hunts encoded PowerShell, certutil, mshta LOLBins & Office spawns)\n"
         "- toggle_dns_shield (params: {\"enabled\": true} - enables system-wide phishing DNS/HOSTS shield)\n"
         "- backup_snapshot (creates an immutable ransomware recovery ZIP snapshot of protected files)\n"
+        "- deploy_honeytokens (deploys and verifies credential/wallet HoneyToken deception traps)\n"
+        "- simulate_honeytoken_trap (runs a safe live breach + instant auto-heal demonstration on a HoneyToken)\n"
+        "- audit_binary_signatures (verifies Windows Authenticode digital signatures of running apps)\n"
         "- scan_usb (scans connected USB removable drives)\n"
         "- check_url (params: {\"url\": \"...\"})\n"
         "- block_ip (params: {\"ip\": \"...\", \"reason\": \"...\"})\n"
@@ -420,6 +423,37 @@ def _heuristic_options_planner(task: str, target_app: Dict[str, Any], device_sum
                     "impact": "SAFE",
                     "action_type": "navigate_tab",
                     "params": {"tab": "device"},
+                },
+            ],
+        }
+
+    if any(k in q for k in ("deception", "honey", "trap", "decoy", "signature", "unsigned", "tamper", "authenticode", "forensic", "heal")):
+        return {
+            "analysis": f"Cyber Deception & Cryptographic Trust Forensics ready while monitoring `{app_name}`. Choose an action:",
+            "options": [
+                {
+                    "id": "opt_sig_audit",
+                    "title": "Audit Windows Digital Signatures",
+                    "description": "Verifies real Authenticode publisher signatures on active executables to spot unsigned/tampered binaries.",
+                    "impact": "DEEP",
+                    "action_type": "audit_binary_signatures",
+                    "params": {},
+                },
+                {
+                    "id": "opt_honey_deploy",
+                    "title": "Verify & Arm HoneyToken Traps",
+                    "description": "Checks cryptographic hashes of decoy AWS/wallet traps with automatic self-healing.",
+                    "impact": "SAFE",
+                    "action_type": "deploy_honeytokens",
+                    "params": {},
+                },
+                {
+                    "id": "opt_open_deception",
+                    "title": "Open Deception & Forensics Center",
+                    "description": "Inspect live HoneyToken traps and Authenticode verification table.",
+                    "impact": "SAFE",
+                    "action_type": "navigate_tab",
+                    "params": {"tab": "deception"},
                 },
             ],
         }

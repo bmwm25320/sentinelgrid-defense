@@ -716,4 +716,24 @@ export const api = {
     });
     return handleResponse<import('./types').SnapshotBackupResult>(res);
   },
+
+  getDeceptionStatus: async (): Promise<import('./types').DeceptionGridStatus> => {
+    const res = await fetch(`${BASE_URL}/api/deception/status`);
+    return handleResponse<import('./types').DeceptionGridStatus>(res);
+  },
+
+  deployHoneyTokens: async (): Promise<import('./types').DeceptionGridStatus> => {
+    const res = await fetch(`${BASE_URL}/api/deception/deploy`, { method: 'POST' });
+    return handleResponse<import('./types').DeceptionGridStatus>(res);
+  },
+
+  simulateDeceptionBreach: async (): Promise<import('./types').SimulateDeceptionResult> => {
+    const res = await fetch(`${BASE_URL}/api/deception/simulate-breach`, { method: 'POST' });
+    return handleResponse<import('./types').SimulateDeceptionResult>(res);
+  },
+
+  auditBinarySignatures: async (): Promise<import('./types').BinarySignatureAuditResult> => {
+    const res = await fetch(`${BASE_URL}/api/security/signature-audit`);
+    return handleResponse<import('./types').BinarySignatureAuditResult>(res);
+  },
 };

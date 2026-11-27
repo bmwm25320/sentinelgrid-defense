@@ -611,6 +611,69 @@ export interface SnapshotBackupResult {
   created_at: string;
 }
 
+export interface HoneyTokenTrapItem {
+  name: string;
+  category: string;
+  mitre_id: string;
+  expected_sha256: string;
+  actual_sha256: string;
+  intact: boolean;
+  size_bytes: number;
+  path: string;
+}
+
+export interface HoneyTokenBreachRecord {
+  trap_name: string;
+  category: string;
+  mitre_id: string;
+  event_type: string;
+  healed: boolean;
+  restored_sha256: string;
+  reaction_ms: number;
+  timestamp: string;
+}
+
+export interface DeceptionGridStatus {
+  armed: boolean;
+  traps_dir: string;
+  traps_count: number;
+  intact_count: number;
+  repaired_now: number;
+  auto_heal_count: number;
+  last_deployed_at?: string | null;
+  traps: HoneyTokenTrapItem[];
+  breaches: HoneyTokenBreachRecord[];
+}
+
+export interface SimulateDeceptionResult {
+  status: string;
+  trap_name: string;
+  tampered_sha256: string;
+  restored_sha256: string;
+  healed: boolean;
+  reaction_ms: number;
+  mitre_id: string;
+  summary: string;
+}
+
+export interface BinarySignatureItem {
+  process_name: string;
+  exe: string;
+  signature_status: string;
+  signer: string;
+  trust_level: 'TRUSTED' | 'UNSIGNED' | 'HIGH_RISK_UNSIGNED' | 'TAMPERED' | 'UNVERIFIED' | string;
+  risk_score: number;
+}
+
+export interface BinarySignatureAuditResult {
+  supported: boolean;
+  checked_count: number;
+  signed_valid_count: number;
+  unsigned_or_risky_count: number;
+  binaries: BinarySignatureItem[];
+  checked_at: string;
+}
+
 
 
 

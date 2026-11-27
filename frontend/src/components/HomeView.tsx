@@ -13,6 +13,7 @@ import {
   RotateCw,
   Laptop,
   KeyRound,
+  Fingerprint,
 } from 'lucide-react';
 import type { DeviceAudit, AlertItem, QuarantineItem } from '../types';
 import { FastLaptopScanModal } from './FastLaptopScanModal';
@@ -114,6 +115,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
       badgeColor: 'text-emerald-400 bg-emerald-950/60 border-emerald-500/30',
       icon: KeyRound,
       targetTab: 'vault',
+    },
+    {
+      id: 'deception',
+      title: isAndroid ? 'Screen-Spy & APK Certs' : 'HoneyTokens & Binary Trust',
+      description: isAndroid
+        ? 'Detects screen-sharing RAT displays and audits X.509 SHA-256 APK certificates.'
+        : 'Bait credential traps with auto-heal rollback + Authenticode publisher signature verification.',
+      badge: 'Zero-Trust',
+      badgeColor: 'text-purple-300 bg-purple-950/60 border-purple-500/40',
+      icon: Fingerprint,
+      targetTab: 'deception',
     },
     {
       id: 'quarantine',

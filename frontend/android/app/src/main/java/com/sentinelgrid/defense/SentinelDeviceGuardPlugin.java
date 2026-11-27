@@ -13,6 +13,9 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.InstallSourceInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
+import android.hardware.display.DisplayManager;
 import android.location.Location;
 import android.location.LocationManager;
 import android.media.AudioManager;
@@ -28,6 +31,7 @@ import android.os.Environment;
 import android.os.Process;
 import android.os.StatFs;
 import android.provider.Settings;
+import android.view.Display;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -39,8 +43,12 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.net.URI;
+import java.security.MessageDigest;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -443,9 +451,17 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         }
 
         if (q.contains("clipboard") || q.contains("paste") || q.contains("privacy") || q.contains("camera") || q.contains("mic") || q.contains("spy") || q.contains("permission")) {
-            plan.analysis = "Privacy & Clipboard Shield can inspect dangerous pasted links and track spy permissions:";
+            plan.analysis = "Privacy, Screen-Spy & Clipboard Shield can check active mirroring RATs and leaked links:";
+            plan.options.add(new AndroidTaskOption("opt_screen_spy", "Scan Screen-Mirror & RAT Displays", "Checks active virtual displays & remote support tools", "CHECK_SCREEN_SPY", ""));
             plan.options.add(new AndroidTaskOption("opt_clip", "Inspect Clipboard Safety", "Checks copied text for phishing links & OTPs", "CHECK_CLIPBOARD", ""));
             plan.options.add(new AndroidTaskOption("opt_scan", "Run Privacy & Stalkerware Audit", "Audits camera, mic & overlay apps", "SCAN_APPS", ""));
+            return plan;
+        }
+
+        if (q.contains("screen") || q.contains("mirror") || q.contains("record") || q.contains("rat") || q.contains("cert") || q.contains("tamper") || q.contains("clone")) {
+            plan.analysis = "Zero-Trust Forensics ready to inspect active display mirroring and APK certificates:";
+            plan.options.add(new AndroidTaskOption("opt_screen_spy", "Detect Active Screen-Sharing RATs", "Inspects Android DisplayManager virtual/wireless displays", "CHECK_SCREEN_SPY", ""));
+            plan.options.add(new AndroidTaskOption("opt_scan", "Verify App Signing Trust", "Audits sideloaded & tampered apps", "SCAN_APPS", ""));
             return plan;
         }
 
@@ -1068,6 +1084,177 @@ public class SentinelDeviceGuardPlugin extends Plugin {
         res.put("count", apkCount);
         res.put("totalMb", totalMb);
         res.put("files", items);
+        call.resolve(res);
+    }
+
+    public static class CertificateRiskEvaluation {
+        public boolean isDebugKey;
+        public String riskLevel;
+        public String reason;
+    }
+
+    public static CertificateRiskEvaluation evaluateApkCertificateRisk(
+        String packageName,
+        boolean isDebuggable,
+        String subjectDn
+    ) {
+        CertificateRiskEvaluation eval = new CertificateRiskEvaluation();
+        String dnLow = subjectDn == null ? "" : subjectDn.toLowerCase(Locale.US);
+        eval.isDebugKey = dnLow.contains("android debug") || dnLow.contains("testkey") || dnLow.contains("debug");
+        if (isDebuggable || eval.isDebugKey) {
+            eval.riskLevel = "HIGH";
+            eval.reason = isDebuggable
+                ? "App built with FLAG_DEBUGGABLE (vulnerable to runtime memory injection/tampering)."
+                : "Signed with generic Android Debug/Test key instead of verified vendor certificate.";
+        } else {
+            eval.riskLevel = "TRUSTED";
+            eval.reason = "Signed with dedicated release publisher certificate.";
+        }
+        return eval;
+    }
+
+    private static String bytesToHexColon(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < bytes.length; i++) {
+            if (i > 0 && i % 4 == 0) sb.append(":");
+            sb.append(String.format(Locale.US, "%02X", bytes[i]));
+        }
+        return sb.toString();
+    }
+
+    @PluginMethod
+    public void auditAppCertificates(PluginCall call) {
+        PackageManager pm = getContext().getPackageManager();
+        String selfPkg = getContext().getPackageName();
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ? PackageManager.GET_SIGNING_CERTIFICATES
+            : PackageManager.GET_SIGNATURES;
+
+        List<PackageInfo> packages = pm.getInstalledPackages(flags);
+        JSArray entries = new JSArray();
+        int auditedCount = 0;
+        int debugSignedCount = 0;
+        int debuggableCount = 0;
+
+        for (PackageInfo pkg : packages) {
+            if (pkg.applicationInfo == null) continue;
+            boolean isSystem = (pkg.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+            if (isSystem && !selfPkg.equals(pkg.packageName)) continue;
+
+            auditedCount++;
+            boolean isDebuggable = (pkg.applicationInfo.flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+            if (isDebuggable) debuggableCount++;
+
+            Signature[] sigs = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && pkg.signingInfo != null) {
+                sigs = pkg.signingInfo.hasMultipleSigners()
+                    ? pkg.signingInfo.getApkContentsSigners()
+                    : pkg.signingInfo.getSigningCertificateHistory();
+            } else {
+                sigs = pkg.signatures;
+            }
+
+            String sha256 = "Unavailable";
+            String signerCn = "Unknown Signer";
+            String fullDn = "";
+            if (sigs != null && sigs.length > 0) {
+                try {
+                    byte[] raw = sigs[0].toByteArray();
+                    byte[] digest = MessageDigest.getInstance("SHA-256").digest(raw);
+                    sha256 = bytesToHexColon(digest);
+                    CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                    X509Certificate cert = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(raw));
+                    fullDn = cert.getSubjectX500Principal().getName();
+                    signerCn = fullDn;
+                    if (fullDn.contains("CN=")) {
+                        signerCn = fullDn.split("CN=")[1].split(",")[0];
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            CertificateRiskEvaluation eval = evaluateApkCertificateRisk(pkg.packageName, isDebuggable, fullDn);
+            if (eval.isDebugKey) debugSignedCount++;
+
+            if (entries.length() < 30) {
+                String label = pkg.applicationInfo.loadLabel(pm).toString();
+                entries.put(new JSObject()
+                    .put("appName", label)
+                    .put("packageName", pkg.packageName)
+                    .put("sha256", sha256)
+                    .put("signerCn", signerCn)
+                    .put("isDebuggable", isDebuggable)
+                    .put("isDebugKey", eval.isDebugKey)
+                    .put("riskLevel", eval.riskLevel)
+                    .put("reason", eval.reason));
+            }
+        }
+
+        JSObject res = new JSObject();
+        res.put("auditedCount", auditedCount);
+        res.put("debugSignedCount", debugSignedCount);
+        res.put("debuggableCount", debuggableCount);
+        res.put("apps", entries);
+        call.resolve(res);
+    }
+
+    @PluginMethod
+    public void inspectScreenSpyStatus(PluginCall call) {
+        Context ctx = getContext();
+        DisplayManager dm = (DisplayManager) ctx.getSystemService(Context.DISPLAY_SERVICE);
+        JSArray displaysArr = new JSArray();
+        int virtualOrExternalCount = 0;
+
+        if (dm != null) {
+            for (Display d : dm.getDisplays()) {
+                int id = d.getDisplayId();
+                boolean isNonDefault = id != Display.DEFAULT_DISPLAY;
+                int flags = d.getFlags();
+                boolean isPresentation = (flags & Display.FLAG_PRESENTATION) != 0;
+                boolean isPrivate = (flags & Display.FLAG_PRIVATE) != 0;
+                if (isNonDefault) {
+                    virtualOrExternalCount++;
+                }
+                displaysArr.put(new JSObject()
+                    .put("displayId", id)
+                    .put("name", d.getName())
+                    .put("isDefault", !isNonDefault)
+                    .put("isPresentation", isPresentation)
+                    .put("isPrivate", isPrivate));
+            }
+        }
+
+        PackageManager pm = ctx.getPackageManager();
+        String[] remoteTools = new String[]{
+            "com.anydesk.anydeskandroid",
+            "com.teamviewer.teamviewer.market.mobile",
+            "com.teamviewer.quicksupport.market",
+            "com.carriez.flutter_hbb",
+            "com.sand.airdroid",
+            "us.zoom.videomeetings"
+        };
+        JSArray remoteFound = new JSArray();
+        for (String pkg : remoteTools) {
+            try {
+                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                remoteFound.put(ai.loadLabel(pm).toString() + " (" + pkg + ")");
+            } catch (PackageManager.NameNotFoundException ignored) {}
+        }
+
+        boolean screenMirroring = virtualOrExternalCount > 0;
+        String riskLevel = screenMirroring ? "CRITICAL" : (remoteFound.length() > 0 ? "MEDIUM" : "SAFE");
+        String summary = screenMirroring
+            ? ("ALERT: " + virtualOrExternalCount + " active virtual/external screen-mirroring display detected!")
+            : (remoteFound.length() > 0
+                ? ("No active screen-mirroring right now. " + remoteFound.length() + " remote-access tool(s) installed.")
+                : "Clean: No virtual display capture or remote-control RAT tools detected.");
+
+        JSObject res = new JSObject();
+        res.put("activeVirtualDisplays", virtualOrExternalCount);
+        res.put("screenMirroringDetected", screenMirroring);
+        res.put("remoteSupportAppsFound", remoteFound);
+        res.put("displays", displaysArr);
+        res.put("riskLevel", riskLevel);
+        res.put("summary", summary);
         call.resolve(res);
     }
 }
