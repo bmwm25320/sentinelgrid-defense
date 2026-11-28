@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { VaultAccountItem, AuthUser, VaultBreachReport } from '../types';
 import { api } from '../api';
+import { FeatureInfo } from './FeatureInfo';
 import {
   ADMIN_EMAIL,
   reauthenticateGoogleUser,
@@ -445,6 +446,13 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
             </p>
           </div>
 
+          <FeatureInfo
+            tone="emerald"
+            className="text-left"
+            why="Saving passwords in plain text or browser autofill makes them easy to steal if your device is shared or infected."
+            how="Derives an encryption key from your dedicated Vault PIN (with salt) so passwords stay encrypted in AES-256 on your device and never leave it in plain text."
+          />
+
           {/* Status Feedback Banners */}
           {resetFeedbackMsg && (
             <div
@@ -829,6 +837,12 @@ export const PasswordVaultView: React.FC<PasswordVaultViewProps> = ({ user, init
           </button>
         </div>
       </div>
+
+      <FeatureInfo
+        tone="emerald"
+        why="Reusing passwords or storing them unencrypted puts all your accounts at risk if one website leaks."
+        how="Accounts are stored locally using AES-256 encryption, copied passwords auto-clear from your clipboard after 30 seconds, and the Dark Web Audit checks only a 5-character SHA-1 hash prefix (k-anonymity) so your real password is never sent online."
+      />
 
       {clipboardTimerNotice && (
         <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">

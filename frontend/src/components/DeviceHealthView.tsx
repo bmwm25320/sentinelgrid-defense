@@ -34,6 +34,7 @@ import type {
   SnapshotBackupResult,
 } from '../types';
 import { api } from '../api';
+import { FeatureInfo } from './FeatureInfo';
 import { SentinelDeviceGuard, isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
 interface DeviceHealthViewProps {
@@ -457,6 +458,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
         </div>
       )}
 
+      <FeatureInfo
+        tone="emerald"
+        why="Slow performance, hidden startup programs, outdated software, and sneaky background scripts often go hand in hand with security risks."
+        how="Monitors live CPU/RAM usage, cleans safe temp junk, scans for outdated software, hunts suspicious command lines, and keeps clean folder snapshots ready."
+      />
+
       {/* 2 Resource Gauges (CPU & RAM) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* CPU Usage Card */}
@@ -553,6 +560,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
             </button>
           </div>
         </div>
+
+        <FeatureInfo
+          tone="emerald"
+          why="Idle updaters, widgets, and bloatware quietly eat memory and slow down your laptop."
+          how="Groups running processes by app, protects your active window and Windows core services, and lets you stop safe background bloat or trim standby RAM in one click."
+        />
 
         {/* Smart Recommendation Banner */}
         <div className="p-3.5 rounded-xl bg-gradient-to-r from-[#0E1D24] to-[#121A28] border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -687,6 +700,9 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
             <p className="text-xs text-slate-400 mt-0.5">
               Pauses popups, alert sounds, and non-critical scheduled sweeps while you are gaming, watching media, or giving a presentation.
             </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              <strong className="text-slate-300">How it works:</strong> Real-time threat blocking stays active silently in the background while non-urgent notifications are muted.
+            </p>
           </div>
         </div>
 
@@ -728,6 +744,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
                 <RotateCw className={`w-3.5 h-3.5 ${isScanningJunk ? 'animate-spin' : ''}`} />
               </button>
             </div>
+
+            <FeatureInfo
+              tone="amber"
+              why="Leftover temporary files and browser caches waste disk space and are often abused by droppers to hide payloads."
+              how="Safely scans Windows Temp, Edge/Chrome cache, and crash dump folders—never touching personal documents—and clears them on request."
+            />
 
             {junkScan ? (
               <div className="space-y-2">
@@ -787,6 +809,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
                 <span>{isScanningSoftware ? 'Scanning...' : 'Check Updates'}</span>
               </button>
             </div>
+
+            <FeatureInfo
+              tone="cyan"
+              why="Hackers commonly break in through known bugs in outdated browsers, PDF readers, and runtimes."
+              how="Queries Windows Package Manager (winget) to find installed apps with newer security patches available and updates them silently."
+            />
 
             {softwareScan ? (
               softwareScan.packages.length === 0 ? (
@@ -886,6 +914,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
               </div>
             </div>
 
+            <FeatureInfo
+              tone="red"
+              why="Fileless attackers abuse built-in Windows tools ('Living-off-the-Land' / LOLBins like PowerShell or cmd) and hidden Scheduled Tasks so no malware file ever sits on disk."
+              how="Inspects live process command lines for encoded scripts or suspicious parent-child launches (e.g. Word spawning PowerShell) and audits Windows Task Scheduler entries."
+            />
+
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
                 <div className="text-slate-400">Processes Inspected</div>
@@ -959,6 +993,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
               </button>
             </div>
 
+            <FeatureInfo
+              tone="emerald"
+              why="Even if ransomware tries to encrypt files before being stopped, having a clean local backup guarantees you never lose important work."
+              how="Packs a timestamped, sealed ZIP snapshot of your Protected Zone files into the local snapshot vault so clean copies are always preserved."
+            />
+
             {snapshotNotice && (
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200">
                 {snapshotNotice}
@@ -999,6 +1039,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
           <span className="text-[11px] text-emerald-400 font-medium">All Core Controls Verified</span>
         </div>
 
+        <FeatureInfo
+          tone="slate"
+          why="Disabling built-in OS defenses (Defender, Firewall, or UAC) is often the first step malware takes after infection."
+          how="Continuously verifies that Windows Defender, Windows Firewall, and User Account Control remain enabled."
+        />
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937] flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -1037,6 +1083,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
             {managedStartup.length > 0 ? managedStartup.length : startupItems.length} apps monitored
           </span>
         </div>
+
+        <FeatureInfo
+          tone="slate"
+          why="Unwanted apps and persistence malware add themselves to Windows startup, slowing boot time and restarting after reboots."
+          how="Lists third-party startup registry entries, flags suspicious paths, and lets you safely disable or re-enable them without deleting the program."
+        />
 
         {managedStartup.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1120,6 +1172,12 @@ export const DeviceHealthView: React.FC<DeviceHealthViewProps> = ({
             />
           </div>
         </div>
+
+        <FeatureInfo
+          tone="slate"
+          why="Frozen or unknown background processes can drain battery and memory."
+          how="Shows live user applications with their Process ID and RAM usage so you can end hung apps safely while system-critical processes stay protected."
+        />
 
         <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
           {filteredProcesses.slice(0, 15).map((p: ProcessItem) => {

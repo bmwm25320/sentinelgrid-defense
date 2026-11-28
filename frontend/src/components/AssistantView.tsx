@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { generateWithGeminiFallback } from '../utils/geminiClient';
 import { api } from '../api';
+import { FeatureInfo } from './FeatureInfo';
 import type { DeviceAudit, AlertItem, StartupItem, VulnerabilityItem, GeminiTaskOption } from '../types';
 import { SentinelDeviceGuard, isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
@@ -282,6 +283,17 @@ ${JSON.stringify(deviceContext, null, 2)}`;
           <Key className="w-3.5 h-3.5 text-emerald-400" />
           <span>{apiKey ? 'API Key Set' : 'Configure Key'}</span>
         </button>
+      </div>
+
+      {/* Plain-English Assistant Explainer */}
+      <div className="px-4 pt-3 bg-[#0D121D] border-b border-[#1F2937] pb-3">
+        <FeatureInfo
+          tone="emerald"
+          collapsible
+          defaultOpen={false}
+          why="Security alerts and system diagnostics can be confusing for everyday users."
+          how="Reads your live device health score, open ports, startup apps, and blocked alerts to answer questions in plain English and suggest safe one-click actions."
+        />
       </div>
 
       {/* Optional In-Chat Key Input */}

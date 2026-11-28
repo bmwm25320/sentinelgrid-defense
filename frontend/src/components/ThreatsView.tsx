@@ -29,6 +29,7 @@ import type { ShieldConfig, AlertItem, QuarantineItem, SmartScanState, UsbShield
 import { api } from '../api';
 import { SafeDemoModal } from './SafeDemoModal';
 import { FastLaptopScanModal } from './FastLaptopScanModal';
+import { FeatureInfo } from './FeatureInfo';
 import {
   SentinelDeviceGuard,
   isAndroidNativeApp,
@@ -354,6 +355,13 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
           <p className="text-xs text-slate-400">Choose how deeply you want to inspect your computer</p>
         </div>
 
+        <FeatureInfo
+          tone="emerald"
+          className="mb-4"
+          why="Different situations call for different speeds—from a 10-second check on active memory to a deep inspection of downloads, startup entries, and packed binaries."
+          how="Scans combine known malware signatures, Shannon entropy checks (to spot encrypted/packed payloads), running process inspection, and optional Windows Defender (MpCmdRun) verification."
+        />
+
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           {/* Quick Scan */}
           <div className="defender-card p-5 flex flex-col justify-between">
@@ -578,6 +586,13 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
           </span>
         </div>
 
+        <FeatureInfo
+          tone="cyan"
+          className="mb-4"
+          why="Manual scans only catch threats after they are already on disk. Real-time shields stop malicious files and ransomware the moment they appear or try to modify your data."
+          how="Background watchers monitor Downloads, Temp, Startup folders, and running processes continuously, locking suspicious files in Quarantine before they can execute."
+        />
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {shieldCards.map((shield) => (
             <div key={shield.key} className="defender-card p-4 flex items-center justify-between gap-4">
@@ -629,6 +644,13 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             {quarantine.length} isolated item{quarantine.length !== 1 ? 's' : ''}
           </span>
         </div>
+
+        <FeatureInfo
+          tone="amber"
+          className="mb-4"
+          why="Immediately deleting a flagged file could cause data loss if a safe custom tool was flagged by mistake."
+          how="Suspicious files are moved into an isolated quarantine vault where they cannot run, letting you review technical details and either restore or permanently shred them."
+        />
 
         {quarantine.length === 0 && alerts.length === 0 ? (
           <div className="defender-card p-8 text-center space-y-2">
@@ -751,6 +773,12 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             </span>
           </div>
 
+          <FeatureInfo
+            tone="emerald"
+            why="Flash drives and external disks are a common way autorun worms and hidden droppers spread between computers offline."
+            how="Detects newly mounted removable drives automatically and scans their files for scripts, hidden executables, and malware signatures."
+          />
+
           <div className="flex items-center justify-between text-xs text-slate-300 bg-[#0B0F17] border border-[#1F2937] rounded-xl p-3">
             <div>
               <div className="font-medium text-white">
@@ -798,6 +826,12 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
               {isAndroidApp ? 'NATIVE ACTIVE' : 'ANDROID ENGINE'}
             </span>
           </div>
+
+          <FeatureInfo
+            tone="cyan"
+            why="Mobile scams often rely on sideloaded spyware APKs, fake banking overlays, and phishing links sent over WhatsApp or SMS."
+            how="Uses native Android services to audit installed APK permissions, watch incoming messaging notifications for phishing URLs, lock sensitive apps with biometrics/PIN, and trigger anti-theft alarm/GPS."
+          />
 
           {isAndroidApp ? (
             <div className="space-y-3">
@@ -1237,6 +1271,13 @@ export const ThreatsView: React.FC<ThreatsViewProps> = ({
             {exclusions.length} trusted path{exclusions.length !== 1 ? 's' : ''}
           </span>
         </div>
+
+        <FeatureInfo
+          tone="slate"
+          className="mb-3"
+          why="Developers and power users often compile test scripts or run trusted tools that shouldn't be slowed down or flagged during builds."
+          how="Any folder added to this allow-list is skipped by the real-time scanner while keeping the rest of your system protected."
+        />
 
         <div className="defender-card p-5 space-y-4">
           <div className="flex flex-col sm:flex-row gap-2">

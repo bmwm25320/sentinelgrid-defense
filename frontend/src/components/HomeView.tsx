@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { DeviceAudit, AlertItem, QuarantineItem } from '../types';
 import { FastLaptopScanModal } from './FastLaptopScanModal';
+import { FeatureInfo } from './FeatureInfo';
 import { isAndroidNativeApp } from '../plugins/sentinelDeviceGuard';
 
 interface HomeViewProps {
@@ -118,11 +119,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
     },
     {
       id: 'deception',
-      title: isAndroid ? 'Screen-Spy & APK Certs' : 'HoneyTokens & Binary Trust',
+      title: isAndroid ? 'Screen-Spy & App Certs' : 'Decoy Traps & App Trust',
       description: isAndroid
-        ? 'Detects screen-sharing RAT displays and audits X.509 SHA-256 APK certificates.'
-        : 'Bait credential traps with auto-heal rollback + Authenticode publisher signature verification.',
-      badge: 'Zero-Trust',
+        ? 'Detects hidden screen-sharing displays and checks if installed apps have valid developer certificates.'
+        : 'Plants harmless fake secret files to catch intruders early and verifies publisher signatures on running apps.',
+      badge: 'Trap & Verify',
       badgeColor: 'text-purple-300 bg-purple-950/60 border-purple-500/40',
       icon: Fingerprint,
       targetTab: 'deception',
@@ -223,6 +224,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Dashboard Overview Explainer */}
+      <FeatureInfo
+        tone="emerald"
+        why="Modern threats target files, browsers, passwords, and network connections at the same time, so one antivirus check alone isn't enough."
+        how="SentinelGrid combines 4 real-time shields (file, ransomware, process, and network monitoring) with decoy traps, an encrypted password vault, and live device health checks. Click any card below to inspect or run that protection."
+      />
 
       {/* 6-Card Protection Grid (Windows Defender Style) */}
       <div>

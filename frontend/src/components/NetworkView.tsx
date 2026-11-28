@@ -31,6 +31,7 @@ import type {
   DnsShieldStatus,
 } from '../types';
 import { api } from '../api';
+import { FeatureInfo } from './FeatureInfo';
 import {
   SentinelDeviceGuard,
   isAndroidNativeApp,
@@ -241,6 +242,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
         </div>
       </div>
 
+      <FeatureInfo
+        tone="emerald"
+        why="Malware and spyware often stay quiet on disk while silently sending stolen files out over your internet or listening on hidden network ports."
+        how="Tracks every active app using the network, checks local listening ports, and enforces firewall rules so you can spot and block suspicious connections immediately."
+      />
+
       {/* 2-Column Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="defender-card p-4">
@@ -296,6 +303,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             <span>Refresh Live State</span>
           </button>
         </div>
+
+        <FeatureInfo
+          tone="cyan"
+          why="Spyware can secretly activate your camera or microphone, and attackers on shared Wi-Fi can spoof router MAC addresses (ARP spoofing) to intercept traffic."
+          how="Checks Windows device handles for active camera/mic hooks and inspects the local ARP table for duplicate or spoofed gateway MAC addresses."
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {/* Webcam Guard */}
@@ -406,6 +419,11 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             <span>Refresh</span>
           </button>
         </div>
+        <FeatureInfo
+          tone="cyan"
+          why="Public cafe or airport Wi-Fi networks can redirect logins through fake captive portals or intercept unencrypted DNS lookups."
+          how="Reads Android network capabilities to confirm whether VPN or Private DNS is active and checks for captive-portal hijacking."
+        />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <div className="p-3 rounded-xl bg-[#0D121D] border border-[#1F2937]">
             <div className="text-slate-400 text-[11px]">Active Transport</div>
@@ -439,6 +457,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           </div>
           <span className="text-[11px] text-slate-400">Web Threat Prevention</span>
         </div>
+
+        <FeatureInfo
+          tone="emerald"
+          why="Phishing links often look almost identical to real banks or hide direct executable downloads behind shortened or IP-based URLs."
+          how="Analyzes domain structure, suspicious keywords, raw IP hosts, and executable file extensions (.exe/.scr) to calculate a risk score before you click."
+        />
 
         <p className="text-xs text-slate-400">
           Paste any web address before opening it to check for deceptive login forms, raw numerical IPs, or dangerous file downloads (.exe/.scr).
@@ -572,6 +596,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             </div>
           </div>
 
+          <FeatureInfo
+            tone="emerald"
+            why="Malicious browser extensions and clipboard hijackers can read banking passwords or swap copied account numbers during online payments."
+            how="Verifies the banking URL first, clears your clipboard, and launches Edge/Chrome in isolated InPrivate mode with third-party extensions disabled."
+          />
+
           {safeMoneySites.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {safeMoneySites.map((site) => (
@@ -634,6 +664,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
               MANIFEST V3
             </span>
           </div>
+
+          <FeatureInfo
+            tone="cyan"
+            why="Most users forget to manually paste links into a checker before clicking. Browser-level and DNS-level blocking stops malicious sites automatically."
+            how="The Chrome/Edge extension checks URLs before a page loads, while the System-Wide HOSTS Sinkhole redirects known phishing and malware domains to 0.0.0.0 across all browsers."
+          />
 
           <p className="text-[11px] text-slate-400 leading-relaxed">
             Real-time pre-navigation web filter powered by SentinelGrid&apos;s <code className="text-cyan-300">/api/check-url</code> engine. Download and load unpacked into <code className="text-slate-300">chrome://extensions</code> or <code className="text-slate-300">edge://extensions</code> (Developer mode).
@@ -709,6 +745,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
           />
         </div>
 
+        <FeatureInfo
+          tone="slate"
+          why="Seeing which programs are actively talking to external servers helps you catch hidden background uploaders or unknown remote tools."
+          how="Lists live outbound socket connections with their Process ID and remote server IP, with one-click IP blocking if something looks unfamiliar."
+        />
+
         <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
           {filteredConnections.length === 0 ? (
             <p className="text-xs text-slate-400 text-center py-4">No matching internet connections.</p>
@@ -776,6 +818,12 @@ export const NetworkView: React.FC<NetworkViewProps> = ({
             </button>
           </div>
         </div>
+
+        <FeatureInfo
+          tone="red"
+          why="If an attacker's command server IP is spotted, simply closing the app isn't enough because malware can restart and reconnect."
+          how="Adds real outbound/inbound block rules directly into Windows Firewall (with a local software blocklist fallback) so the IP cannot be reached."
+        />
 
         {(shieldStatus?.blocked_ips?.length ?? 0) === 0 ? (
           <p className="text-xs text-slate-400 text-center py-3">

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { AuthUser, LoginAuditLog, AuditStats, VaultPinResetRequest } from '../types';
 import { api } from '../api';
+import { FeatureInfo } from './FeatureInfo';
 import { fetchAuditLogs, ADMIN_EMAIL, subscribeToAllPinResetRequests, approveVaultPinReset } from '../firebase';
 
 interface AdminAuditViewProps {
@@ -275,6 +276,12 @@ export const AdminAuditView: React.FC<AdminAuditViewProps> = ({ user }) => {
           </button>
         </div>
       </div>
+
+      <FeatureInfo
+        tone="purple"
+        why="Administrators need a single tamper-evident record of who signed in across Windows, Android, and Web, plus a safe way to approve locked-out users' Vault PIN resets."
+        how="Syncs login events from Firebase Cloud Audit Logs with platform tags and timestamps, lets admins export CSV reports, and sends real-time PIN reset approvals back to the user's vault."
+      />
 
       {errorMsg && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-center gap-2">

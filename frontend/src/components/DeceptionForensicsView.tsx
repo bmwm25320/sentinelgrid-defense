@@ -3,7 +3,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Fingerprint,
-  Sparkles,
   RotateCw,
   Zap,
   CheckCircle2,
@@ -24,10 +23,25 @@ import {
   type AndroidAppCertificatesResult,
   type AndroidScreenSpyStatus,
 } from '../plugins/sentinelDeviceGuard';
+import { FeatureInfo } from './FeatureInfo';
 
 interface DeceptionForensicsViewProps {
   onDataUpdated?: () => void;
 }
+
+const TRAP_PLAIN_LABELS: Record<string, string> = {
+  'aws_prod_master_keys.env': 'Fake cloud & database password file (bait for credential stealers)',
+  'crypto_cold_wallet_seed.txt': 'Fake crypto recovery phrase file (bait for wallet-stealing malware)',
+  'executive_payroll_2026.csv': 'Fake employee salary table (bait for data theft & ransomware)',
+};
+
+const formatEventLabel = (eventType: string): string => {
+  if (eventType === 'SIMULATED_TAMPER_AND_EXFIL') return 'Simulated attack test';
+  if (eventType === 'MODIFIED') return 'Unauthorized edit';
+  if (eventType === 'DELETED') return 'Unauthorized deletion';
+  if (eventType === 'MOVED') return 'Unauthorized move';
+  return eventType.replace(/_/g, ' ').toLowerCase();
+};
 
 export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ onDataUpdated }) => {
   const isAndroid = isAndroidNativeApp();
@@ -66,7 +80,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       if (decRes.status === 'fulfilled') setDeception(decRes.value);
       if (sigRes.status === 'fulfilled') setSigAudit(sigRes.value);
     } catch (e: any) {
-      setErrorMsg(e.message || 'Unable to load Cyber Deception engine.');
+      setErrorMsg(e.message || 'Unable to load Deception & Signature Check.');
     }
   };
 
@@ -80,7 +94,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       if (spyRes.status === 'fulfilled') setScreenSpy(spyRes.value);
       if (certsRes.status === 'fulfilled') setCertAudit(certsRes.value);
     } catch (e: any) {
-      setErrorMsg(e.message || 'Unable to run native Android forensics.');
+      setErrorMsg(e.message || 'Unable to run mobile device checks.');
     }
   };
 
@@ -91,7 +105,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       const res = await api.deployHoneyTokens();
       setDeception(res);
     } catch (e: any) {
-      setErrorMsg(`Deploy note: ${e.message}`);
+      setErrorMsg(`Could not reset decoy files: ${e.message}`);
     } finally {
       setDeploying(false);
     }
@@ -107,7 +121,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       setDeception(updated);
       onDataUpdated?.();
     } catch (e: any) {
-      setErrorMsg(`Simulation failed: ${e.message}`);
+      setErrorMsg(`Test failed: ${e.message}`);
     } finally {
       setSimulating(false);
     }
@@ -120,7 +134,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       const res = await api.auditBinarySignatures();
       setSigAudit(res);
     } catch (e: any) {
-      setErrorMsg(`Signature audit error: ${e.message}`);
+      setErrorMsg(`Signature check error: ${e.message}`);
     } finally {
       setAuditingSigs(false);
     }
@@ -132,7 +146,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       const res = await SentinelDeviceGuard.inspectScreenSpyStatus();
       setScreenSpy(res);
     } catch (e: any) {
-      setErrorMsg(`Screen-Spy check note: ${e.message}`);
+      setErrorMsg(`Screen-share check error: ${e.message}`);
     } finally {
       setCheckingSpy(false);
     }
@@ -144,7 +158,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
       const res = await SentinelDeviceGuard.auditAppCertificates();
       setCertAudit(res);
     } catch (e: any) {
-      setErrorMsg(`APK Certificate audit note: ${e.message}`);
+      setErrorMsg(`App certificate check error: ${e.message}`);
     } finally {
       setAuditingCerts(false);
     }
@@ -152,30 +166,30 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
 
   return (
     <div className="space-y-6">
-      {/* Feature Explainer Header Banner */}
-      <div className="p-6 rounded-2xl border border-purple-500/35 bg-gradient-to-r from-[#131126] via-[#0F172A] to-[#0D1B22]">
+      {/* Plain-English Page Header */}
+      <div className="p-6 rounded-2xl border border-purple-500/30 bg-gradient-to-r from-[#131126] via-[#0F172A] to-[#0D1B22]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/40 text-purple-200 text-[11px] font-semibold mb-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>ZERO-TRUST DECEPTION & CRYPTOGRAPHIC FORENSICS</span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-400/30 text-purple-200 text-[11px] font-semibold mb-2">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>{isAndroid ? 'Mobile Anti-Scam & App Check' : 'Trap-Based Detection & Publisher Verification'}</span>
             </div>
             <h1 className="text-xl font-bold text-white tracking-tight">
               {isAndroid
-                ? 'Screen-Spy RAT Detector & APK Certificate Forensics'
-                : 'HoneyToken Cyber Deception & Authenticode Forensics'}
+                ? 'Screen-Sharing Detector & App Certificate Check'
+                : 'Decoy File Traps & App Signature Check'}
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-1.5 leading-relaxed">
               {isAndroid
-                ? 'Detects live screen-mirroring / remote-access scam sessions via Android DisplayManager and inspects every installed app’s real X.509 SHA-256 signing certificate to spot fake or debug-tampered APKs.'
-                : 'Plants realistic fake credential HoneyTokens to lure & catch attackers the instant a trap is touched—auto-healing files in milliseconds—while auditing real Windows Authenticode digital signatures of running executables.'}
+                ? 'Checks if another app is secretly recording or mirroring your phone screen, and verifies the developer certificates of installed apps to spot fake or modified APKs.'
+                : 'Sets harmless fake secret files as bait to catch ransomware or intruders the moment they touch them, and checks whether running programs are signed by real software publishers.'}
             </p>
           </div>
           <div className="px-4 py-3 rounded-xl bg-[#0B0F17]/90 border border-[#1F2937] text-xs space-y-1 shrink-0">
-            <div className="text-slate-400">Deception Grid Status</div>
+            <div className="text-slate-400">Trap Status</div>
             <div className="text-sm font-bold text-emerald-400 flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4" />
-              <span>{isAndroid ? 'On-Device Hardware Forensics Ready' : deception?.armed ? 'HoneyTokens Armed & Intact' : 'Ready'}</span>
+              <span>{isAndroid ? 'Mobile Checks Ready' : deception?.armed ? 'All Decoy Traps Armed' : 'Ready'}</span>
             </div>
           </div>
         </div>
@@ -189,16 +203,16 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
 
       {!isAndroid ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* WINDOWS 1: HoneyToken Deception Grid & Instant Self-Healing */}
+          {/* WINDOWS 1: Decoy File Traps (HoneyTokens) */}
           <div className="bg-[#111827]/90 border border-[#1F2937] rounded-2xl p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-white flex items-center gap-2">
                   <FileKey2 className="w-5 h-5 text-purple-400" />
-                  <span>Active HoneyToken Decoy Grid</span>
+                  <span>Decoy File Traps (HoneyTokens)</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Auto-healed attacks intercepted: <strong className="text-purple-300">{deception?.auto_heal_count ?? 0}</strong>
+                  Attacks caught &amp; auto-restored: <strong className="text-purple-300">{deception?.auto_heal_count ?? 0}</strong>
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -206,43 +220,76 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
                   onClick={handleDeployTraps}
                   disabled={deploying}
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                  title="Verify or recreate all decoy files in their clean state"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${deploying ? 'animate-spin' : ''}`} />
-                  <span>Re-Arm</span>
+                  <span>Reset Traps</span>
                 </button>
                 <button
                   onClick={handleSimulateBreach}
                   disabled={simulating}
                   className="px-3.5 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
+                  title="Safely modify one decoy file to demonstrate instant detection and automatic restore"
                 >
                   <Zap className="w-3.5 h-3.5" />
-                  <span>{simulating ? 'Triggering Trap...' : 'Test Breach & Auto-Heal'}</span>
+                  <span>{simulating ? 'Testing...' : 'Test Fake Attack'}</span>
                 </button>
               </div>
             </div>
 
+            <FeatureInfo
+              tone="purple"
+              why="Traditional antivirus only catches known malware. Brand-new ransomware or password stealers still have to open or edit files on your PC, so decoy traps catch them right away with zero false alarms."
+              how="SentinelGrid keeps 3 harmless fake secret files inside a watched folder (deception_traps). Normal apps never touch them. If any program edits or deletes one, our file watcher raises a critical alert and restores the clean file within milliseconds."
+            />
+
             {simResult && (
-              <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs space-y-1.5">
-                <div className="font-bold text-emerald-300 flex items-center justify-between">
-                  <span>{simResult.status} ({simResult.mitre_id})</span>
-                  <span>Reaction: {simResult.reaction_ms}ms</span>
+              <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs space-y-2">
+                <div className="font-bold text-emerald-300 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Trap Caught &amp; File Auto-Restored</span>
+                  </span>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30">
+                    Restored in {simResult.reaction_ms} ms
+                  </span>
                 </div>
-                <div className="text-slate-200">{simResult.summary}</div>
-                <div className="text-[10px] font-mono text-red-300 truncate">Tampered Hash: {simResult.tampered_sha256}</div>
-                <div className="text-[10px] font-mono text-emerald-300 truncate">Restored Hash: {simResult.restored_sha256}</div>
+                <p className="text-slate-200 leading-relaxed">
+                  Fake file <code className="text-emerald-300 font-mono">{simResult.trap_name}</code> was modified during the simulated attack. Our watcher detected the change immediately and restored the original decoy file.
+                </p>
+                <div className="p-2.5 rounded-lg bg-[#0B0F17] border border-[#1F2937] space-y-1 text-[11px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-red-300 font-medium shrink-0">Tampered file SHA-256:</span>
+                    <span className="font-mono text-red-200/90 truncate">{simResult.tampered_sha256}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-emerald-300 font-medium shrink-0">Restored clean SHA-256:</span>
+                    <span className="font-mono text-emerald-200/90 truncate">{simResult.restored_sha256}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 pt-0.5">
+                    Logged as MITRE <span className="font-mono text-purple-300">{simResult.mitre_id}</span> (Credential File Access) · File matches original clean baseline again.
+                  </div>
+                </div>
               </div>
             )}
 
             <div className="space-y-2">
+              <div className="text-[11px] font-semibold text-slate-300">Active Bait Files Monitored on Disk</div>
               {(deception?.traps || []).map((trap) => (
                 <div key={trap.name} className="p-3 rounded-xl bg-[#0B0F17] border border-[#1F2937] text-xs flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-semibold text-white flex items-center gap-2">
                       <span className="truncate">{trap.name}</span>
-                      <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 text-[10px] font-mono">{trap.mitre_id}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 text-[10px] font-mono" title="MITRE ATT&CK technique ID">
+                        {trap.mitre_id}
+                      </span>
                     </div>
-                    <div className="text-[11px] text-slate-400">{trap.category} · {trap.size_bytes} bytes</div>
-                    <div className="text-[10px] text-slate-500 font-mono truncate">SHA-256: {trap.actual_sha256}</div>
+                    <div className="text-[11px] text-slate-300 mt-0.5">
+                      {TRAP_PLAIN_LABELS[trap.name] || trap.category} ({trap.size_bytes} bytes)
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+                      Clean fingerprint (SHA-256): {trap.actual_sha256}
+                    </div>
                   </div>
                   <span className={`px-2 py-1 rounded-lg text-[10px] font-bold shrink-0 ${trap.intact ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
                     {trap.intact ? 'INTACT' : 'TAMPERED'}
@@ -253,27 +300,29 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
 
             {deception && deception.breaches.length > 0 && (
               <div className="pt-2 border-t border-[#1F2937] space-y-1.5 max-h-36 overflow-y-auto">
-                <div className="text-[11px] font-semibold text-slate-300">Recent Deception & Self-Heal Events</div>
+                <div className="text-[11px] font-semibold text-slate-300">Recent Trap &amp; Auto-Restore Log</div>
                 {deception.breaches.slice(0, 5).map((b, idx) => (
                   <div key={`${b.trap_name}-${idx}`} className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded-lg bg-[#0B0F17] border border-[#1F2937]">
-                    <span className="text-slate-200 truncate">{b.trap_name} · {b.event_type}</span>
-                    <span className="text-emerald-300 font-semibold shrink-0">Healed ({b.reaction_ms}ms)</span>
+                    <span className="text-slate-200 truncate">
+                      {b.trap_name} · {formatEventLabel(b.event_type)}
+                    </span>
+                    <span className="text-emerald-300 font-semibold shrink-0">Restored ({b.reaction_ms}ms)</span>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* WINDOWS 2: Real Authenticode Binary Digital Signature Auditor */}
+          {/* WINDOWS 2: Running App Signature Check */}
           <div className="bg-[#111827]/90 border border-[#1F2937] rounded-2xl p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-white flex items-center gap-2">
                   <Fingerprint className="w-5 h-5 text-cyan-400" />
-                  <span>Binary Digital Signature Audit (Authenticode)</span>
+                  <span>Running App Signature Check</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Verifies live third-party executables against Windows publisher certificates.
+                  Checks whether live background programs are signed by verified software publishers (Windows Authenticode).
                 </p>
               </div>
               <button
@@ -282,21 +331,27 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
                 className="px-3.5 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50"
               >
                 <RotateCw className={`w-3.5 h-3.5 ${auditingSigs ? 'animate-spin' : ''}`} />
-                <span>{auditingSigs ? 'Verifying...' : 'Verify Binaries'}</span>
+                <span>{auditingSigs ? 'Checking...' : 'Check Running Apps'}</span>
               </button>
             </div>
 
+            <FeatureInfo
+              tone="cyan"
+              why="Malware often disguises itself with names like 'UpdateHelper.exe'. Real software from companies like Microsoft, Google, or Adobe includes a tamper-proof digital publisher certificate."
+              how="SentinelGrid looks up running user-space executables and asks Windows Authenticode to verify each file's publisher certificate. Apps with valid signatures show as Valid; unsigned or modified files are flagged at the top."
+            />
+
             <div className="grid grid-cols-3 gap-2.5 text-xs text-center">
               <div className="p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
-                <div className="text-slate-400">Checked</div>
+                <div className="text-slate-400">Apps Checked</div>
                 <div className="text-lg font-bold text-white">{sigAudit?.checked_count ?? '—'}</div>
               </div>
               <div className="p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
-                <div className="text-slate-400">Trusted Signed</div>
+                <div className="text-slate-400">Verified Signed</div>
                 <div className="text-lg font-bold text-emerald-400">{sigAudit?.signed_valid_count ?? '—'}</div>
               </div>
               <div className="p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
-                <div className="text-slate-400">Unsigned/Risky</div>
+                <div className="text-slate-400">Unsigned / Needs Review</div>
                 <div className="text-lg font-bold text-amber-300">{sigAudit?.unsigned_or_risky_count ?? '—'}</div>
               </div>
             </div>
@@ -306,7 +361,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
                 <div key={`${bin.exe}-${idx}`} className="p-2.5 rounded-xl bg-[#0B0F17] border border-[#1F2937] text-xs flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-white truncate">{bin.process_name}</div>
-                    <div className="text-[11px] text-cyan-300 truncate">Signer: {bin.signer}</div>
+                    <div className="text-[11px] text-cyan-300 truncate">Publisher: {bin.signer}</div>
                     <div className="text-[10px] text-slate-500 font-mono truncate">{bin.exe}</div>
                   </div>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
@@ -325,16 +380,16 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* ANDROID 1: Screen-Share & Virtual Display RAT Detector */}
+          {/* ANDROID 1: Screen-Share & Virtual Display Detector */}
           <div className="bg-[#111827]/90 border border-[#1F2937] rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-white flex items-center gap-2">
                   <Monitor className="w-5 h-5 text-red-400" />
-                  <span>Screen-Mirror & RAT Display Guard</span>
+                  <span>Screen-Sharing &amp; Remote Spy Detector</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Detects hidden virtual screens & remote-control call scams in real time.
+                  Checks for hidden virtual displays used in screen-mirroring and remote-support scams.
                 </p>
               </div>
               <button
@@ -345,6 +400,12 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
                 {checkingSpy ? 'Checking...' : 'Scan Displays'}
               </button>
             </div>
+
+            <FeatureInfo
+              tone="red"
+              why="Phone scammers often trick victims into sharing their screen to steal OTPs and banking PINs without them noticing a background virtual display."
+              how="Reads Android's active DisplayManager list to check if any non-built-in or virtual screen-capture display is currently attached."
+            />
 
             {screenSpy && (
               <div className="space-y-3 text-xs">
@@ -370,7 +431,7 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
 
                 <div className="space-y-1.5">
                   <div className="text-[11px] font-semibold text-slate-300">
-                    Active OS Displays ({screenSpy.displays.length})
+                    Active Phone Displays ({screenSpy.displays.length})
                   </div>
                   {screenSpy.displays.map((d) => (
                     <div key={d.displayId} className="flex items-center justify-between p-2 rounded-lg bg-[#0B0F17] border border-[#1F2937]">
@@ -385,16 +446,16 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
             )}
           </div>
 
-          {/* ANDROID 2: APK Cryptographic SHA-256 Certificate & Tamper Forensics */}
+          {/* ANDROID 2: Installed App Certificate Check */}
           <div className="bg-[#111827]/90 border border-[#1F2937] rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-white flex items-center gap-2">
                   <Fingerprint className="w-5 h-5 text-purple-400" />
-                  <span>APK Certificate & Tamper Inspector</span>
+                  <span>Installed App Certificate Check</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Inspects X.509 SHA-256 signing fingerprints & debug-tamper flags.
+                  Checks each app&apos;s X.509 SHA-256 signing certificate and debug-mode flags.
                 </p>
               </div>
               <button
@@ -402,23 +463,29 @@ export const DeceptionForensicsView: React.FC<DeceptionForensicsViewProps> = ({ 
                 disabled={auditingCerts}
                 className="px-3 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-400 text-slate-950 text-xs font-bold shrink-0"
               >
-                {auditingCerts ? 'Inspecting...' : 'Inspect Certs'}
+                {auditingCerts ? 'Checking...' : 'Check App Certs'}
               </button>
             </div>
+
+            <FeatureInfo
+              tone="purple"
+              why="Modified or pirated APKs are stripped of the original developer's signature and re-signed with a generic or debug certificate."
+              how="Inspects the X.509 signing certificate fingerprint and debuggable flag of installed apps via Android PackageManager."
+            />
 
             {certAudit && (
               <div className="space-y-3 text-xs">
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="p-2 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
-                    <div className="text-slate-400">Audited</div>
+                    <div className="text-slate-400">Apps Checked</div>
                     <div className="text-base font-bold text-white">{certAudit.auditedCount}</div>
                   </div>
                   <div className="p-2 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
-                    <div className="text-slate-400">Debug-Key</div>
+                    <div className="text-slate-400">Debug-Key Signed</div>
                     <div className="text-base font-bold text-amber-300">{certAudit.debugSignedCount}</div>
                   </div>
                   <div className="p-2 rounded-xl bg-[#0B0F17] border border-[#1F2937]">
-                    <div className="text-slate-400">Debuggable</div>
+                    <div className="text-slate-400">Debuggable Mode</div>
                     <div className="text-base font-bold text-red-300">{certAudit.debuggableCount}</div>
                   </div>
                 </div>

@@ -77,9 +77,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
     },
     {
       id: 'deception',
-      label: 'Deception & Forensics',
+      label: 'Decoy Traps & Trust',
       icon: Fingerprint,
-      badge: 'ZERO-TRUST',
+      badge: 'Traps',
       badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
     },
     {
